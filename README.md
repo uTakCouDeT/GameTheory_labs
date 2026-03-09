@@ -1,1 +1,1 @@
-# Game_theory_labs
+# GameTheory_labs
