@@ -2,6 +2,7 @@ import math
 from fractions import Fraction
 from itertools import combinations
 import numpy as np
+import matplotlib.pyplot as plt
 
 
 def fr(x, max_den=10000):
@@ -50,8 +51,8 @@ def pure_strategy_analysis(C):
 
     return v_lower, v_upper, saddle_points
 
-def analytical_solution(matrix):
 
+def analytical_solution(matrix):
     n = matrix.shape[0]
     ones = np.ones(n)
 
@@ -67,6 +68,7 @@ def analytical_solution(matrix):
     v = 1.0 / denom
 
     return inv_matrix, x, y, v
+
 
 def analytic_solution_by_supports(C, tol=1e-9):
     m, n = C.shape
@@ -221,7 +223,7 @@ def print_brown_robinson_table(history, cut=False):
     if not history:
         return
 
-    print("Таблица метода Брауна-Робинсона")
+    print("Таблица метода Брауна-Робинсон")
     print("-" * 150)
     header = (
         f"{'k':>4} | {'x_i':>4} | {'y_i':>4} | "
@@ -244,6 +246,146 @@ def print_brown_robinson_table(history, cut=False):
 
     print("-" * 150)
     print()
+
+
+def plot_brown_robinson_graphs(history, analytic=None, save=False, prefix="lab2"):
+    """
+    Строит графики для отчёта:
+    1) сходимость верхней и нижней оценок цены игры;
+    2) частоты использования стратегий игрока A;
+    3) частоты использования стратегий игрока B.
+
+    Параметры:
+    - history: список словарей из brown_robinson(...)
+    - analytic: результат analytic_solution_by_supports(C) или None
+    - save: если True, графики сохраняются в png
+    - prefix: префикс имён файлов при save=True
+    """
+    if not history:
+        print("История метода Брауна-Робинсон пуста, графики построить нельзя.")
+        return
+
+    ks = np.array([rec["k"] for rec in history], dtype=int)
+
+    upper_curr = np.array([rec["upper_curr"] for rec in history], dtype=float)
+    lower_curr = np.array([rec["lower_curr"] for rec in history], dtype=float)
+    upper_best = np.array([rec["upper_best"] for rec in history], dtype=float)
+    lower_best = np.array([rec["lower_best"] for rec in history], dtype=float)
+    gaps = np.array([rec["gap"] for rec in history], dtype=float)
+
+    x_est_all = np.array([rec["x_est"] for rec in history], dtype=float)  # shape = (K, m)
+    y_est_all = np.array([rec["y_est"] for rec in history], dtype=float)  # shape = (K, n)
+
+    m = x_est_all.shape[1]
+    n = y_est_all.shape[1]
+
+    # ---------------------------------------------------------
+    # График 1. Сходимость оценок цены игры
+    # ---------------------------------------------------------
+    plt.figure(figsize=(10, 6))
+    plt.plot(ks, upper_best, label="Лучшая верхняя оценка")
+    plt.plot(ks, lower_best, label="Лучшая нижняя оценка")
+    plt.plot(ks, upper_curr, linestyle="--", alpha=0.7, label="Текущая верхняя оценка")
+    plt.plot(ks, lower_curr, linestyle="--", alpha=0.7, label="Текущая нижняя оценка")
+
+    if analytic is not None:
+        plt.axhline(analytic["v"], linestyle=":", linewidth=2,
+                    label=f"Аналитическая цена игры v = {analytic['v']:.6f}")
+
+    plt.xlabel("Номер итерации k")
+    plt.ylabel("Оценка цены игры")
+    plt.title("Сходимость оценок цены игры в методе Брауна-Робинсон")
+    plt.grid(True, alpha=0.3)
+    plt.legend()
+    plt.tight_layout()
+
+    if save:
+        plt.savefig(f"{prefix}_value_bounds.png", dpi=300, bbox_inches="tight")
+
+    # ---------------------------------------------------------
+    # График 2. Частоты использования стратегий игрока A
+    # ---------------------------------------------------------
+    plt.figure(figsize=(10, 6))
+    for i in range(m):
+        plt.plot(ks, x_est_all[:, i], label=f"x{i + 1}")
+
+    if analytic is not None:
+        for i in range(m):
+            plt.axhline(
+                analytic["x"][i],
+                linestyle=":",
+                linewidth=1,
+                alpha=0.9,
+                label=f"x{i + 1}* = {analytic['x'][i]:.6f}" if ks[0] == 1 else None
+            )
+
+        # Чтобы легенда не дублировала подписи от axhline много раз,
+        # вручную переопределим её чуть ниже
+        plt.clf()
+        plt.figure(figsize=(10, 6))
+        for i in range(m):
+            plt.plot(ks, x_est_all[:, i], label=f"x{i + 1} (числ.)")
+            plt.axhline(analytic["x"][i], linestyle=":", linewidth=1, alpha=0.9, label=f"x{i + 1}* (аналит.)")
+
+    plt.xlabel("Номер итерации k")
+    plt.ylabel("Частота использования стратегии")
+    plt.title("Сходимость смешанной стратегии игрока A")
+    plt.grid(True, alpha=0.3)
+    plt.legend()
+    plt.tight_layout()
+
+    if save:
+        plt.savefig(f"{prefix}_player_A_frequencies.png", dpi=300, bbox_inches="tight")
+
+    # ---------------------------------------------------------
+    # График 3. Частоты использования стратегий игрока B
+    # ---------------------------------------------------------
+    plt.figure(figsize=(10, 6))
+    for j in range(n):
+        plt.plot(ks, y_est_all[:, j], label=f"y{j + 1}")
+
+    if analytic is not None:
+        for j in range(n):
+            plt.axhline(
+                analytic["y"][j],
+                linestyle=":",
+                linewidth=1,
+                alpha=0.9,
+                label=f"y{j + 1}* = {analytic['y'][j]:.6f}" if ks[0] == 1 else None
+            )
+
+        plt.clf()
+        plt.figure(figsize=(10, 6))
+        for j in range(n):
+            plt.plot(ks, y_est_all[:, j], label=f"y{j + 1} (числ.)")
+            plt.axhline(analytic["y"][j], linestyle=":", linewidth=1, alpha=0.9, label=f"y{j + 1}* (аналит.)")
+
+    plt.xlabel("Номер итерации k")
+    plt.ylabel("Частота использования стратегии")
+    plt.title("Сходимость смешанной стратегии игрока B")
+    plt.grid(True, alpha=0.3)
+    plt.legend()
+    plt.tight_layout()
+
+    if save:
+        plt.savefig(f"{prefix}_player_B_frequencies.png", dpi=300, bbox_inches="tight")
+
+    # ---------------------------------------------------------
+    # Дополнительный график 4. Погрешность E(k)
+    # ---------------------------------------------------------
+    plt.figure(figsize=(10, 6))
+    plt.plot(ks, gaps, label="E(k) = min(v_max/k) - max(v_min/k)")
+    plt.xlabel("Номер итерации k")
+    plt.ylabel("Погрешность")
+    plt.title("Изменение погрешности метода Брауна-Робинсон")
+    plt.grid(True, alpha=0.3)
+    plt.legend()
+    plt.tight_layout()
+
+    if save:
+        plt.savefig(f"{prefix}_gap.png", dpi=300, bbox_inches="tight")
+
+    plt.show()
 
 
 def main():
@@ -302,7 +444,7 @@ def main():
         print()
 
     # Браун-Робинсон
-    print("Метод Брауна-Робинсона")
+    print("Метод Брауна-Робинсон")
     print(f"Точность ε = 0.1")
     print(f"Начальная пара стратегий: A1, B1")
     print()
@@ -318,7 +460,7 @@ def main():
     v_bottom = last["lower_best"]
     v_mid = (v_top + v_bottom) / 2
 
-    print("Итоги метода Брауна-Робинсона")
+    print("Итоги метода Брауна-Робинсон")
     print(f"Число итераций: {k}")
     print(f"Лучшая верхняя оценка цены игры: {fmt(v_top)} = {fr(v_top)}")
     print(f"Лучшая нижняя оценка цены игры:  {fmt(v_bottom)} = {fr(v_bottom)}")
@@ -356,6 +498,7 @@ def main():
     print()
     print(analytical_solution(C))
 
+    plot_brown_robinson_graphs(history, analytic=analytic, save=True, prefix="lab2")
 
 
 if __name__ == "__main__":
