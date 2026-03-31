@@ -248,7 +248,7 @@ def print_brown_robinson_table(history, cut=False):
     print()
 
 
-def plot_brown_robinson_graphs(history, analytic=None, save=False, prefix="lab2"):
+def plot_brown_robinson_graphs(history, analytic=None, save=False, prefix="lab1"):
     if not history:
         print("История метода Брауна-Робинсон пуста, графики построить нельзя.")
         return
@@ -285,7 +285,7 @@ def plot_brown_robinson_graphs(history, analytic=None, save=False, prefix="lab2"
     plt.tight_layout()
 
     if save:
-        plt.savefig(f"{prefix}_value_bounds.png", dpi=300, bbox_inches="tight")
+        plt.savefig(f"data/{prefix}_value_bounds.png", dpi=300, bbox_inches="tight")
 
     plt.figure(figsize=(10, 6))
     for i in range(m):
@@ -315,7 +315,7 @@ def plot_brown_robinson_graphs(history, analytic=None, save=False, prefix="lab2"
     plt.tight_layout()
 
     if save:
-        plt.savefig(f"{prefix}_player_A_frequencies.png", dpi=300, bbox_inches="tight")
+        plt.savefig(f"data/{prefix}_player_A_frequencies.png", dpi=300, bbox_inches="tight")
 
     plt.figure(figsize=(10, 6))
     for j in range(n):
@@ -345,7 +345,7 @@ def plot_brown_robinson_graphs(history, analytic=None, save=False, prefix="lab2"
     plt.tight_layout()
 
     if save:
-        plt.savefig(f"{prefix}_player_B_frequencies.png", dpi=300, bbox_inches="tight")
+        plt.savefig(f"data/{prefix}_player_B_frequencies.png", dpi=300, bbox_inches="tight")
 
     plt.figure(figsize=(10, 6))
     plt.plot(ks, gaps, label="E(k) = min(v_max/k) - max(v_min/k)")
@@ -357,7 +357,7 @@ def plot_brown_robinson_graphs(history, analytic=None, save=False, prefix="lab2"
     plt.tight_layout()
 
     if save:
-        plt.savefig(f"{prefix}_gap.png", dpi=300, bbox_inches="tight")
+        plt.savefig(f"data/{prefix}_gap.png", dpi=300, bbox_inches="tight")
 
     plt.show()
 
@@ -464,7 +464,7 @@ def main():
         print("Сравнение по стратегии и цене с аналитическим решением не выполняется,")
         print("так как аналитическое решение не найдено.")
     print()
-    plot_brown_robinson_graphs(history, analytic=analytic, save=True, prefix="lab2")
+    plot_brown_robinson_graphs(history, analytic=analytic, save=True)
 
 
 if __name__ == "__main__":
