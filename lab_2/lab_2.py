@@ -1,6 +1,4 @@
 from __future__ import annotations
-
-import argparse
 from dataclasses import dataclass
 from fractions import Fraction
 
@@ -8,41 +6,16 @@ import numpy as np
 
 from lab_1 import fmt, fr, pure_strategy_analysis, brown_robinson
 
-DEFAULT_VARIANT = 13
-DEFAULT_OUTER_EPSILON = 1e-5
-DEFAULT_BR_EPSILON = 1e-1
-DEFAULT_MAX_N = 2000
-DEFAULT_BR_MAX_ITER = 10000
+OUTER_EPSILON = 1e-5
+BR_EPSILON = 1e-1
+MAX_N = 2000
+BR_MAX_ITER = 10000
 PRINT_FIRST_ITERATIONS = 10
 PRINT_DETAILS_ITER = 10
 
 
 def q(value: str) -> float:
     return float(Fraction(value))
-
-
-VARIANTS = {
-    1: {"a": q("-5"), "b": q("5/12"), "c": q("10/3"), "d": q("-2/3"), "e": q("-4/3")},
-    2: {"a": q("-10"), "b": q("15/4"), "c": q("10"), "d": q("-4"), "e": q("-8")},
-    3: {"a": q("-4"), "b": q("4"), "c": q("8"), "d": q("-12/5"), "e": q("-28/5")},
-    4: {"a": q("-15"), "b": q("20/3"), "c": q("40"), "d": q("-12"), "e": q("-24")},
-    5: {"a": q("-3"), "b": q("12/5"), "c": q("6"), "d": q("-3/5"), "e": q("-24/5")},
-    6: {"a": q("-5"), "b": q("5/2"), "c": q("15"), "d": q("-3"), "e": q("-12")},
-    7: {"a": q("-3"), "b": q("3/2"), "c": q("5/2"), "d": q("-4"), "e": q("-11/5")},
-    8: {"a": q("-5"), "b": q("9/2"), "c": q("15"), "d": q("-9/2"), "e": q("-9")},
-    9: {"a": q("-6"), "b": q("32/5"), "c": q("16"), "d": q("-16/5"), "e": q("-64/5")},
-    10: {"a": q("-3"), "b": q("9"), "c": q("18"), "d": q("-9/5"), "e": q("-81/5")},
-    11: {"a": q("-5"), "b": q("5/6"), "c": q("10/3"), "d": q("-2/3"), "e": q("-2")},
-    12: {"a": q("-10"), "b": q("40/3"), "c": q("40"), "d": q("-16"), "e": q("-32")},
-    13: {"a": q("-4"), "b": q("2"), "c": q("8"), "d": q("-4/5"), "e": q("-32/5")},
-    14: {"a": q("-6"), "b": q("16/5"), "c": q("16"), "d": q("-16/5"), "e": q("-48/5")},
-    15: {"a": q("-15"), "b": q("9/2"), "c": q("24"), "d": q("-36/5"), "e": q("-84/5")},
-    16: {"a": q("-5"), "b": q("5/4"), "c": q("10/3"), "d": q("-2/3"), "e": q("-8/3")},
-    17: {"a": q("-4"), "b": q("10/3"), "c": q("16/3"), "d": q("-16/30"), "e": q("-112/30")},
-    18: {"a": q("-10"), "b": q("15"), "c": q("60"), "d": q("-12"), "e": q("-48")},
-    19: {"a": q("-15"), "b": q("15"), "c": q("75"), "d": q("-45/2"), "e": q("-105/2")},
-    20: {"a": q("-5"), "b": q("10/3"), "c": q("10"), "d": q("-2"), "e": q("-8")},
-}
 
 
 @dataclass
@@ -260,6 +233,7 @@ def solve_iteratively(
 
     return results, False
 
+
 def matrix_to_string(C: np.ndarray, digits: int = 6) -> str:
     rows = []
     for row in C:
@@ -267,19 +241,18 @@ def matrix_to_string(C: np.ndarray, digits: int = 6) -> str:
     return "\n".join(rows)
 
 
-def print_configuration(args, coeffs: dict[str, float]):
-    print(f"\nВариант: {args.variant}")
+def print_configuration(coeffs: dict[str, float]):
+    print(f"\nВариант: 13")
     print("-" * 80)
     print("Рассматривается непрерывная антагонистическая игра на единичном квадрате")
     print("0 <= x <= 1, 0 <= y <= 1 с функцией выигрыша:")
     print("H(x, y) = a*x^2 + b*y^2 + c*x*y + d*x + e*y")
     print(
         f"a = {fr(coeffs['a'])}, b = {fr(coeffs['b'])}, c = {fr(coeffs['c'])}, d = {fr(coeffs['d'])}, e = {fr(coeffs['e'])}")
-    print(f"\nКритерий останова по внешней итерации: {args.outer_epsilon}")
-    print(f"Точность Брауна–Робинсон: {args.br_epsilon}")
-    print(f"Максимальное N: {args.max_n}")
-    print(f"Максимум итераций Брауна–Робинсон: {args.br_max_iter}")
-    print("Импорт вспомогательных функций: from lab_1 import ...")
+    print(f"\nКритерий останова по внешней итерации: {OUTER_EPSILON}")
+    print(f"Точность Брауна–Робинсон: {BR_EPSILON}")
+    print(f"Максимальное N: {MAX_N}")
+    print(f"Максимум итераций Брауна–Робинсон: {BR_MAX_ITER}")
     print("-" * 80)
     print()
 
@@ -299,6 +272,9 @@ def print_analytic_solution(sol: ContinuousSolution, a: float, b: float, c: floa
 
 
 def print_first_iterations_summary(results: list[IterationResult], limit: int = PRINT_FIRST_ITERATIONS):
+    if PRINT_FIRST_ITERATIONS == 0:
+        return 0
+
     print(f"Первые {min(limit, len(results))} итераций внешнего уточнения")
     print("-" * 120)
     print(f"{'Ит.':>4} | {'N':>4} | {'Размер':>8} | {'Метод':>16} | {'x':>10} | {'y':>10} | {'H':>12} | {'Δ_prev':>12}")
@@ -318,6 +294,9 @@ def print_first_iterations_summary(results: list[IterationResult], limit: int = 
 
 
 def print_iteration_details(results: list[IterationResult], limit: int = PRINT_DETAILS_ITER):
+    if PRINT_DETAILS_ITER == 0:
+        return 0
+
     print(f"Подробности по первым {min(limit, len(results))} итерациям")
     print("-" * 80)
 
@@ -382,24 +361,35 @@ def print_final_summary(results: list[IterationResult], analytic: ContinuousSolu
     print("-" * 80)
 
 
-def parse_args():
-    parser = argparse.ArgumentParser(
-        description="ЛР №3. Решение непрерывной антагонистической игры на единичном квадрате."
-    )
-    parser.add_argument("--variant", type=int, default=DEFAULT_VARIANT, choices=sorted(VARIANTS.keys()))
-    parser.add_argument("--outer-epsilon", type=float, default=DEFAULT_OUTER_EPSILON)
-    parser.add_argument("--br-epsilon", type=float, default=DEFAULT_BR_EPSILON)
-    parser.add_argument("--max-n", type=int, default=DEFAULT_MAX_N)
-    parser.add_argument("--br-max-iter", type=int, default=DEFAULT_BR_MAX_ITER)
-    return parser.parse_args()
+VARIANTS = {
+    1: {"a": q("-5"), "b": q("5/12"), "c": q("10/3"), "d": q("-2/3"), "e": q("-4/3")},
+    2: {"a": q("-10"), "b": q("15/4"), "c": q("10"), "d": q("-4"), "e": q("-8")},
+    3: {"a": q("-4"), "b": q("4"), "c": q("8"), "d": q("-12/5"), "e": q("-28/5")},
+    4: {"a": q("-15"), "b": q("20/3"), "c": q("40"), "d": q("-12"), "e": q("-24")},
+    5: {"a": q("-3"), "b": q("12/5"), "c": q("6"), "d": q("-3/5"), "e": q("-24/5")},
+    6: {"a": q("-5"), "b": q("5/2"), "c": q("15"), "d": q("-3"), "e": q("-12")},
+    7: {"a": q("-3"), "b": q("3/2"), "c": q("5/2"), "d": q("-4"), "e": q("-11/5")},
+    8: {"a": q("-5"), "b": q("9/2"), "c": q("15"), "d": q("-9/2"), "e": q("-9")},
+    9: {"a": q("-6"), "b": q("32/5"), "c": q("16"), "d": q("-16/5"), "e": q("-64/5")},
+    10: {"a": q("-3"), "b": q("9"), "c": q("18"), "d": q("-9/5"), "e": q("-81/5")},
+    11: {"a": q("-5"), "b": q("5/6"), "c": q("10/3"), "d": q("-2/3"), "e": q("-2")},
+    12: {"a": q("-10"), "b": q("40/3"), "c": q("40"), "d": q("-16"), "e": q("-32")},
+    13: {"a": q("-4"), "b": q("2"), "c": q("8"), "d": q("-4/5"), "e": q("-32/5")},
+    14: {"a": q("-6"), "b": q("16/5"), "c": q("16"), "d": q("-16/5"), "e": q("-48/5")},
+    15: {"a": q("-15"), "b": q("9/2"), "c": q("24"), "d": q("-36/5"), "e": q("-84/5")},
+    16: {"a": q("-5"), "b": q("5/4"), "c": q("10/3"), "d": q("-2/3"), "e": q("-8/3")},
+    17: {"a": q("-4"), "b": q("10/3"), "c": q("16/3"), "d": q("-16/30"), "e": q("-112/30")},
+    18: {"a": q("-10"), "b": q("15"), "c": q("60"), "d": q("-12"), "e": q("-48")},
+    19: {"a": q("-15"), "b": q("15"), "c": q("75"), "d": q("-45/2"), "e": q("-105/2")},
+    20: {"a": q("-5"), "b": q("10/3"), "c": q("10"), "d": q("-2"), "e": q("-8")},
+}
 
 
 def main():
-    args = parse_args()
-    coeffs = VARIANTS[args.variant]
+    coeffs = VARIANTS[13]
     a, b, c, d, e = coeffs["a"], coeffs["b"], coeffs["c"], coeffs["d"], coeffs["e"]
 
-    print_configuration(args, coeffs)
+    print_configuration(coeffs)
 
     analytic = solve_continuous_game_exact(a, b, c, d, e)
     print_analytic_solution(analytic, a, b, c, d, e)
@@ -410,15 +400,15 @@ def main():
         c=c,
         d=d,
         e=e,
-        outer_epsilon=args.outer_epsilon,
-        br_epsilon=args.br_epsilon,
-        max_N=args.max_n,
-        br_max_iter=args.br_max_iter,
+        outer_epsilon=OUTER_EPSILON,
+        br_epsilon=BR_EPSILON,
+        max_N=MAX_N,
+        br_max_iter=BR_MAX_ITER,
     )
 
     print_first_iterations_summary(results)
     print_iteration_details(results)
-    print_final_summary(results, analytic, args.outer_epsilon, converged)
+    print_final_summary(results, analytic, OUTER_EPSILON, converged)
 
 
 if __name__ == "__main__":
