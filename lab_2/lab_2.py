@@ -1,294 +1,96 @@
+from __future__ import annotations
+
+import argparse
+import importlib.util
 import math
-from fractions import Fraction
 from dataclasses import dataclass
-from typing import Callable, Dict, List, Optional, Tuple
+from fractions import Fraction
+from pathlib import Path
+from typing import Callable
 
 import numpy as np
 
-
-# ============================================================
-# ЛР3. Непрерывная выпукло-вогнутая антагонистическая игра
-#
-# Что делает программа:
-# 1) Решает задачу аналитически для ядра
-#       H(x, y) = a*x^2 + b*y^2 + c*x*y + d*x + e*y,
-#    x, y in [0, 1]
-# 2) Решает задачу численно методом аппроксимации на сетке:
-#       x_i = i / N, y_j = j / N, i,j = 0..N
-#    то есть получаем матрицу размера (N+1) x (N+1).
-# 3) Для каждой сеточной аппроксимации:
-#       - ищет седловую точку в чистых стратегиях;
-#       - если седла нет, применяет метод Брауна-Робинсона.
-# 4) Останавливается по внешнему критерию:
-#       |h^(N) - h^(N-1)| <= epsilon_outer
-#    где h^(N) — найденная цена игры на текущей сетке.
-#
-# В отчёт обычно удобно брать:
-# - текст условия;
-# - аналитическое решение;
-# - первые 10 итераций по N;
-# - итерацию, на которой выполнен критерий остановки;
-# - итоговые численные значения.
-# ============================================================
+DEFAULT_VARIANT = 13
+DEFAULT_OUTER_EPSILON = 1e-5      # критерий останова по |H_k - H_{k-1}|
+DEFAULT_BR_EPSILON = 1e-1         # точность метода Брауна–Робинсон для дискретной матрицы
+DEFAULT_MAX_N = 200               # максимальное число разбиений [0, 1]
+DEFAULT_BR_MAX_ITER = 10000
+PRINT_FIRST_ITERATIONS = 10
+SHOW_MATRICES_FOR_FIRST_ITERATIONS = True
 
 
-# ------------------------------------------------------------
-# НАСТРОЙКИ ВАРИАНТА
-# ------------------------------------------------------------
-# Подставьте сюда коэффициенты своего варианта.
-A_COEF = -3.0
-B_COEF = 1.5
-C_COEF = 18.0 / 5.0
-D_COEF = -18.0 / 50.0
-E_COEF = -72.0 / 25.0
-
-# Внешний критерий остановки по ЛР3:
-# останавливаем рост N, когда соседние оценки цены игры близки.
-EPSILON_OUTER = 1e-3
-
-# Внутренний критерий для метода Брауна-Робинсона
-# на фиксированной матрице.
-EPSILON_BR = 1e-3
-
-# Начинаем с N = 2, потому что это даёт сетку 3x3:
-# 0, 0.5, 1.0
-N_START = 2
-N_MAX = 200
-
-# Ограничение на число итераций Брауна-Робинсона
-BR_MAX_ITER = 100000
-
-# Сколько первых итераций по N печатать отдельно для отчёта
-OUTER_ITERS_FOR_REPORT = 10
-
-# Печатать ли матрицы для первых итераций по N
-PRINT_MATRICES_FOR_FIRST_ITERATIONS = 3
+def q(value: str) -> float:
+    return float(Fraction(value))
 
 
-# ------------------------------------------------------------
-# СЛУЖЕБНЫЕ ФУНКЦИИ
-# ------------------------------------------------------------
+VARIANTS = {
+    1:  {"a": q("-5"),  "b": q("5/12"), "c": q("10/3"), "d": q("-2/3"),   "e": q("-4/3")},
+    2:  {"a": q("-10"), "b": q("15/4"), "c": q("10"),   "d": q("-4"),     "e": q("-8")},
+    3:  {"a": q("-4"),  "b": q("4"),    "c": q("8"),    "d": q("-12/5"),  "e": q("-28/5")},
+    4:  {"a": q("-15"), "b": q("20/3"), "c": q("40"),   "d": q("-12"),    "e": q("-24")},
+    5:  {"a": q("-3"),  "b": q("12/5"), "c": q("6"),    "d": q("-3/5"),   "e": q("-24/5")},
+    6:  {"a": q("-5"),  "b": q("5/2"),  "c": q("15"),   "d": q("-3"),     "e": q("-12")},
+    7:  {"a": q("-3"),  "b": q("3/2"),  "c": q("5/2"),  "d": q("-4"),     "e": q("-11/5")},
+    8:  {"a": q("-5"),  "b": q("9/2"),  "c": q("15"),   "d": q("-9/2"),   "e": q("-9")},
+    9:  {"a": q("-6"),  "b": q("32/5"), "c": q("16"),   "d": q("-16/5"),  "e": q("-64/5")},
+    10: {"a": q("-3"),  "b": q("9"),    "c": q("18"),   "d": q("-9/5"),   "e": q("-81/5")},
+    11: {"a": q("-5"),  "b": q("5/6"),  "c": q("10/3"), "d": q("-2/3"),   "e": q("-2")},
+    12: {"a": q("-10"), "b": q("40/3"), "c": q("40"),   "d": q("-16"),    "e": q("-32")},
+    13: {"a": q("-4"),  "b": q("2"),    "c": q("8"),    "d": q("-4/5"),   "e": q("-32/5")},
+    14: {"a": q("-6"),  "b": q("16/5"), "c": q("16"),   "d": q("-16/5"),  "e": q("-48/5")},
+    15: {"a": q("-15"), "b": q("9/2"),  "c": q("24"),   "d": q("-36/5"),  "e": q("-84/5")},
+    16: {"a": q("-5"),  "b": q("5/4"),  "c": q("10/3"), "d": q("-2/3"),   "e": q("-8/3")},
+    17: {"a": q("-4"),  "b": q("10/3"), "c": q("16/3"), "d": q("-16/30"), "e": q("-112/30")},
+    18: {"a": q("-10"), "b": q("15"),   "c": q("60"),   "d": q("-12"),    "e": q("-48")},
+    19: {"a": q("-15"), "b": q("15"),   "c": q("75"),   "d": q("-45/2"),  "e": q("-105/2")},
+    20: {"a": q("-5"),  "b": q("10/3"), "c": q("10"),   "d": q("-2"),     "e": q("-8")},
+}
 
-def fmt(x: float, digits: int = 6) -> str:
+
+def _fmt_default(x: float, digits: int = 6) -> str:
     return f"{x:.{digits}f}"
 
 
-def fr(x: float, max_den: int = 10000) -> str:
+def _fr_default(x: float, max_den: int = 10000) -> str:
     if abs(x - round(x)) < 1e-12:
         return str(int(round(x)))
     return str(Fraction(float(x)).limit_denominator(max_den))
 
 
-def vector_to_str(v: np.ndarray, digits: int = 6) -> str:
-    return "[" + ", ".join(fmt(float(x), digits) for x in v) + "]"
+def _vector_to_str_default(v: np.ndarray, digits: int = 6) -> str:
+    return "[" + ", ".join(_fmt_default(float(x), digits) for x in v) + "]"
 
 
-def vector_to_fraction_str(v: np.ndarray) -> str:
-    return "[" + ", ".join(fr(float(x)) for x in v) + "]"
+def _vector_to_fraction_str_default(v: np.ndarray) -> str:
+    return "[" + ", ".join(_fr_default(float(x)) for x in v) + "]"
 
 
-def matrix_to_pretty_str(M: np.ndarray, digits: int = 6) -> str:
-    rows = []
-    for row in M:
-        rows.append("[" + ", ".join(f"{float(x): .{digits}f}" for x in row) + "]")
-    return "\n".join(rows)
-
-
-def clamp01(x: float) -> float:
-    return max(0.0, min(1.0, x))
-
-
-# ------------------------------------------------------------
-# ЯДРО ИГРЫ
-# ------------------------------------------------------------
-
-def H(x: float, y: float, a: float, b: float, c: float, d: float, e: float) -> float:
-    return a * x * x + b * y * y + c * x * y + d * x + e * y
-
-
-def Hx(x: float, y: float, a: float, c: float, d: float) -> float:
-    return 2.0 * a * x + c * y + d
-
-
-def Hy(x: float, y: float, b: float, c: float, e: float) -> float:
-    return 2.0 * b * y + c * x + e
-
-
-def x_best_response(y: float, a: float, c: float, d: float) -> float:
-    # Игрок A максимизирует H по x на [0,1], H_xx = 2a < 0
-    if abs(a) < 1e-14:
-        # Вне выпукло-вогнутого случая, но на всякий случай
-        candidates = [0.0, 1.0]
-        values = [H(x, y, a, 0.0, c, d, 0.0) for x in candidates]
-        return candidates[int(np.argmax(values))]
-    x0 = -(c * y + d) / (2.0 * a)
-    return clamp01(x0)
-
-
-def y_best_response(x: float, b: float, c: float, e: float) -> float:
-    # Игрок B минимизирует H по y на [0,1], H_yy = 2b > 0
-    if abs(b) < 1e-14:
-        candidates = [0.0, 1.0]
-        values = [H(x, y, 0.0, b, c, 0.0, e) for y in candidates]
-        return candidates[int(np.argmin(values))]
-    y0 = -(c * x + e) / (2.0 * b)
-    return clamp01(y0)
-
-
-# ------------------------------------------------------------
-# АНАЛИТИЧЕСКОЕ РЕШЕНИЕ НА [0,1]x[0,1]
-# ------------------------------------------------------------
-
-@dataclass
-class AnalyticSolution:
-    x_star: float
-    y_star: float
-    h_star: float
-    kind: str
-
-
-def is_saddle_point_on_unit_square(
-    x_star: float,
-    y_star: float,
-    a: float,
-    b: float,
-    c: float,
-    d: float,
-    e: float,
-    tol: float = 1e-9,
-) -> bool:
-    # Проверяем через точные лучшие ответы на [0,1]
-    x_br = x_best_response(y_star, a, c, d)
-    y_br = y_best_response(x_star, b, c, e)
-
-    h_star = H(x_star, y_star, a, b, c, d, e)
-    h_xbr = H(x_br, y_star, a, b, c, d, e)
-    h_ybr = H(x_star, y_br, a, b, c, d, e)
-
-    return abs(h_xbr - h_star) <= tol and abs(h_ybr - h_star) <= tol
-
-
-def continuous_analytic_solution(
-    a: float,
-    b: float,
-    c: float,
-    d: float,
-    e: float,
-    tol: float = 1e-9,
-) -> Optional[AnalyticSolution]:
-    # Кандидаты: внутренняя точка, граничные точки по BR, углы.
-    candidates: List[Tuple[float, float, str]] = []
-
-    # 1) Внутренняя стационарная точка
-    det = 4.0 * a * b - c * c
-    if abs(det) > 1e-14:
-        # Решаем систему:
-        # 2ax + cy + d = 0
-        # cx + 2by + e = 0
-        x0 = (c * e - 2.0 * b * d) / det
-        y0 = (c * d - 2.0 * a * e) / det
-        if -tol <= x0 <= 1.0 + tol and -tol <= y0 <= 1.0 + tol:
-            candidates.append((clamp01(x0), clamp01(y0), "внутренняя стационарная точка"))
-
-    # 2) x = 0 и x = 1
-    for x_fixed in [0.0, 1.0]:
-        y0 = y_best_response(x_fixed, b, c, e)
-        candidates.append((x_fixed, y0, f"граница x={int(x_fixed)}"))
-
-    # 3) y = 0 и y = 1
-    for y_fixed in [0.0, 1.0]:
-        x0 = x_best_response(y_fixed, a, c, d)
-        candidates.append((x0, y_fixed, f"граница y={int(y_fixed)}"))
-
-    # 4) углы
-    for x_corner in [0.0, 1.0]:
-        for y_corner in [0.0, 1.0]:
-            candidates.append((x_corner, y_corner, "угловая точка"))
-
-    unique_candidates: List[Tuple[float, float, str]] = []
-    seen: List[Tuple[float, float]] = []
-    for x0, y0, kind in candidates:
-        key = (round(x0, 12), round(y0, 12))
-        if key not in seen:
-            seen.append(key)
-            unique_candidates.append((x0, y0, kind))
-
-    for x0, y0, kind in unique_candidates:
-        if is_saddle_point_on_unit_square(x0, y0, a, b, c, d, e, tol=tol):
-            return AnalyticSolution(
-                x_star=x0,
-                y_star=y0,
-                h_star=H(x0, y0, a, b, c, d, e),
-                kind=kind,
-            )
-
-    return None
-
-
-# ------------------------------------------------------------
-# МАТРИЧНАЯ ИГРА НА СЕТКЕ
-# ------------------------------------------------------------
-
-def build_grid_matrix(
-    N: int,
-    a: float,
-    b: float,
-    c: float,
-    d: float,
-    e: float,
-) -> Tuple[np.ndarray, np.ndarray]:
-    grid = np.linspace(0.0, 1.0, N + 1)
-    C = np.zeros((N + 1, N + 1), dtype=float)
-    for i, x in enumerate(grid):
-        for j, y in enumerate(grid):
-            C[i, j] = H(float(x), float(y), a, b, c, d, e)
-    return grid, C
-
-
-def pure_strategy_analysis(C: np.ndarray, tol: float = 1e-12) -> Tuple[float, float, List[Tuple[int, int]]]:
+def _pure_strategy_analysis_default(C: np.ndarray):
     row_mins = C.min(axis=1)
     col_maxs = C.max(axis=0)
 
     v_lower = float(row_mins.max())
     v_upper = float(col_maxs.min())
 
-    saddle_points: List[Tuple[int, int]] = []
-    if abs(v_lower - v_upper) <= tol:
-        good_rows = np.where(np.isclose(row_mins, v_lower, atol=tol))[0]
-        good_cols = np.where(np.isclose(col_maxs, v_upper, atol=tol))[0]
+    saddle_points = []
+    if np.isclose(v_lower, v_upper):
+        good_rows = np.where(np.isclose(row_mins, v_lower))[0]
+        good_cols = np.where(np.isclose(col_maxs, v_upper))[0]
         for i in good_rows:
             for j in good_cols:
-                if abs(C[i, j] - v_lower) <= tol:
+                if np.isclose(C[i, j], v_lower):
                     saddle_points.append((int(i), int(j)))
 
     return v_lower, v_upper, saddle_points
 
 
-# ------------------------------------------------------------
-# МЕТОД БРАУНА-РОБИНСОНА ДЛЯ ФИКСИРОВАННОЙ МАТРИЦЫ
-# ------------------------------------------------------------
-
-@dataclass
-class BrownRobinsonResult:
-    iterations: int
-    x_est: np.ndarray
-    y_est: np.ndarray
-    row_counts: np.ndarray
-    col_counts: np.ndarray
-    upper_best: float
-    lower_best: float
-    value_mid: float
-    gap: float
-    history_first_10: List[Dict[str, float]]
-
-
-def brown_robinson(
+def _brown_robinson_default(
     C: np.ndarray,
-    epsilon: float = 1e-3,
-    max_iter: int = 100000,
+    epsilon: float = 0.1,
+    max_iter: int = 10000,
     start_row: int = 0,
     start_col: int = 0,
-) -> BrownRobinsonResult:
+):
     m, n = C.shape
 
     row_counts = np.zeros(m, dtype=int)
@@ -302,8 +104,7 @@ def brown_robinson(
 
     best_upper = math.inf
     best_lower = -math.inf
-
-    history_first_10: List[Dict[str, float]] = []
+    history = []
 
     for k in range(1, max_iter + 1):
         row_counts[i] += 1
@@ -317,385 +118,520 @@ def brown_robinson(
 
         best_upper = min(best_upper, upper_curr)
         best_lower = max(best_lower, lower_curr)
-        gap = best_upper - best_lower
+        gap = float(best_upper - best_lower)
 
-        if k <= 10:
-            history_first_10.append({
-                "k": k,
-                "row_choice": i,
-                "col_choice": j,
-                "upper_curr": upper_curr,
-                "lower_curr": lower_curr,
-                "upper_best": best_upper,
-                "lower_best": best_lower,
-                "gap": gap,
-            })
+        x_est = row_counts / k
+        y_est = col_counts / k
+
+        history.append({
+            "k": k,
+            "row_choice": i + 1,
+            "col_choice": j + 1,
+            "row_cum": row_cum.copy(),
+            "col_cum": col_cum.copy(),
+            "upper_curr": upper_curr,
+            "lower_curr": lower_curr,
+            "upper_best": float(best_upper),
+            "lower_best": float(best_lower),
+            "gap": gap,
+            "x_est": x_est.copy(),
+            "y_est": y_est.copy(),
+            "row_counts": row_counts.copy(),
+            "col_counts": col_counts.copy(),
+        })
 
         if gap <= epsilon:
-            x_est = row_counts / k
-            y_est = col_counts / k
-            value_mid = 0.5 * (best_upper + best_lower)
-            return BrownRobinsonResult(
-                iterations=k,
-                x_est=x_est,
-                y_est=y_est,
-                row_counts=row_counts.copy(),
-                col_counts=col_counts.copy(),
-                upper_best=best_upper,
-                lower_best=best_lower,
-                value_mid=value_mid,
-                gap=gap,
-                history_first_10=history_first_10,
-            )
+            break
 
         i = int(np.argmax(row_cum))
         j = int(np.argmin(col_cum))
 
-    x_est = row_counts / max_iter
-    y_est = col_counts / max_iter
-    value_mid = 0.5 * (best_upper + best_lower)
-    return BrownRobinsonResult(
-        iterations=max_iter,
-        x_est=x_est,
-        y_est=y_est,
-        row_counts=row_counts.copy(),
-        col_counts=col_counts.copy(),
-        upper_best=best_upper,
-        lower_best=best_lower,
-        value_mid=value_mid,
-        gap=best_upper - best_lower,
-        history_first_10=history_first_10,
-    )
+    return history
 
 
-# ------------------------------------------------------------
-# РЕШЕНИЕ ОДНОЙ СЕТОЧНОЙ АППРОКСИМАЦИИ
-# ------------------------------------------------------------
+def _load_lab1_functions():
+    current_file = Path(__file__).resolve()
+    candidates = [
+        current_file.parents[1] / "lab_1" / "lab_1.py",
+        current_file.parent.parent / "lab_1" / "lab_1.py",
+        Path.cwd() / "lab_1" / "lab_1.py",
+        Path.cwd().parent / "lab_1" / "lab_1.py",
+        Path("/mnt/data/lab_1.py"),
+    ]
+
+    for path in candidates:
+        if not path.exists():
+            continue
+
+        spec = importlib.util.spec_from_file_location("lab1_shared", path)
+        if spec is None or spec.loader is None:
+            continue
+
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+
+        return {
+            "fmt": getattr(module, "fmt", _fmt_default),
+            "fr": getattr(module, "fr", _fr_default),
+            "vector_to_str": getattr(module, "vector_to_str", _vector_to_str_default),
+            "vector_to_fraction_str": getattr(module, "vector_to_fraction_str", _vector_to_fraction_str_default),
+            "pure_strategy_analysis": getattr(module, "pure_strategy_analysis", _pure_strategy_analysis_default),
+            "brown_robinson": getattr(module, "brown_robinson", _brown_robinson_default),
+            "source_path": path,
+        }
+
+    return {
+        "fmt": _fmt_default,
+        "fr": _fr_default,
+        "vector_to_str": _vector_to_str_default,
+        "vector_to_fraction_str": _vector_to_fraction_str_default,
+        "pure_strategy_analysis": _pure_strategy_analysis_default,
+        "brown_robinson": _brown_robinson_default,
+        "source_path": None,
+    }
+
+
+LAB1 = _load_lab1_functions()
+fmt: Callable[[float, int], str] = LAB1["fmt"]
+fr: Callable[[float], str] = LAB1["fr"]
+vector_to_str = LAB1["vector_to_str"]
+vector_to_fraction_str = LAB1["vector_to_fraction_str"]
+pure_strategy_analysis = LAB1["pure_strategy_analysis"]
+brown_robinson = LAB1["brown_robinson"]
+
 
 @dataclass
-class GridIterationResult:
+class ContinuousSolution:
+    x: float
+    y: float
+    h: float
+    regime: str
+    hx: float
+    hy: float
+
+
+@dataclass
+class IterationResult:
+    iteration_no: int
     N: int
     grid: np.ndarray
     matrix: np.ndarray
     method: str
-    value: float
-    x_repr: float
-    y_repr: float
-    x_strategy: np.ndarray
-    y_strategy: np.ndarray
-    delta_from_prev: Optional[float]
-    saddle_points: List[Tuple[int, int]]
-    br_result: Optional[BrownRobinsonResult]
+    x: float
+    y: float
+    h: float
+    delta_prev: float | None
+    v_lower: float
+    v_upper: float
+    saddle_points: list[tuple[int, int]]
+    br_iterations: int | None = None
+    br_gap: float | None = None
+    br_upper: float | None = None
+    br_lower: float | None = None
+    x_mix: np.ndarray | None = None
+    y_mix: np.ndarray | None = None
 
 
-def solve_grid_game(
-    N: int,
+def kernel(x: float, y: float, a: float, b: float, c: float, d: float, e: float) -> float:
+    return float(a * x * x + b * y * y + c * x * y + d * x + e * y)
+
+
+def hx(x: float, y: float, a: float, c: float, d: float) -> float:
+    return float(2 * a * x + c * y + d)
+
+
+def hy(x: float, y: float, b: float, c: float, e: float) -> float:
+    return float(c * x + 2 * b * y + e)
+
+
+def build_matrix(a: float, b: float, c: float, d: float, e: float, N: int):
+    grid = np.linspace(0.0, 1.0, N + 1)
+    X, Y = np.meshgrid(grid, grid, indexing="ij")
+    C = a * X * X + b * Y * Y + c * X * Y + d * X + e * Y
+    return grid, C.astype(float)
+
+
+def solve_continuous_game_exact(a: float, b: float, c: float, d: float, e: float, tol: float = 1e-10) -> ContinuousSolution:
+    candidates: list[ContinuousSolution] = []
+
+    for x_case in ("0", "1", "i"):
+        for y_case in ("0", "1", "i"):
+            A = []
+            rhs = []
+
+            if x_case == "0":
+                A.append([1.0, 0.0])
+                rhs.append(0.0)
+            elif x_case == "1":
+                A.append([1.0, 0.0])
+                rhs.append(1.0)
+            else:
+                A.append([2 * a, c])
+                rhs.append(-d)
+
+            if y_case == "0":
+                A.append([0.0, 1.0])
+                rhs.append(0.0)
+            elif y_case == "1":
+                A.append([0.0, 1.0])
+                rhs.append(1.0)
+            else:
+                A.append([c, 2 * b])
+                rhs.append(-e)
+
+            A = np.array(A, dtype=float)
+            rhs = np.array(rhs, dtype=float)
+
+            try:
+                x, y = np.linalg.solve(A, rhs)
+            except np.linalg.LinAlgError:
+                continue
+
+            if not (-tol <= x <= 1 + tol and -tol <= y <= 1 + tol):
+                continue
+
+            x = min(max(float(x), 0.0), 1.0)
+            y = min(max(float(y), 0.0), 1.0)
+
+            dx = hx(x, y, a, c, d)
+            dy = hy(x, y, b, c, e)
+
+            ok = True
+
+            if x_case == "0":
+                ok = ok and dx <= tol
+            elif x_case == "1":
+                ok = ok and dx >= -tol
+            else:
+                ok = ok and (tol < x < 1 - tol) and abs(dx) <= 1e-7
+
+            if y_case == "0":
+                ok = ok and dy >= -tol
+            elif y_case == "1":
+                ok = ok and dy <= tol
+            else:
+                ok = ok and (tol < y < 1 - tol) and abs(dy) <= 1e-7
+
+            if ok:
+                candidates.append(
+                    ContinuousSolution(
+                        x=x,
+                        y=y,
+                        h=kernel(x, y, a, b, c, d, e),
+                        regime=f"x={x_case}, y={y_case}",
+                        hx=dx,
+                        hy=dy,
+                    )
+                )
+
+    if not candidates:
+        raise RuntimeError("Не удалось найти аналитическое решение непрерывной игры.")
+
+    candidates.sort(key=lambda s: (round(s.h, 12), s.x, s.y), reverse=True)
+    return candidates[0]
+
+
+def solve_matrix_game(
+    C: np.ndarray,
+    grid: np.ndarray,
     a: float,
     b: float,
     c: float,
     d: float,
     e: float,
-    epsilon_br: float,
+    br_epsilon: float,
     br_max_iter: int,
-) -> GridIterationResult:
-    grid, C = build_grid_matrix(N, a, b, c, d, e)
-    v_lower, v_upper, saddles = pure_strategy_analysis(C)
+) -> IterationResult:
+    v_lower, v_upper, saddle_points = pure_strategy_analysis(C)
 
-    if saddles:
-        i, j = saddles[0]
-        x_strategy = np.zeros(N + 1, dtype=float)
-        y_strategy = np.zeros(N + 1, dtype=float)
-        x_strategy[i] = 1.0
-        y_strategy[j] = 1.0
-        return GridIterationResult(
-            N=N,
+    if saddle_points:
+        i, j = saddle_points[0]
+        x = float(grid[i])
+        y = float(grid[j])
+        h = float(C[i, j])
+        return IterationResult(
+            iteration_no=0,
+            N=len(grid) - 1,
             grid=grid,
             matrix=C,
-            method="седловая точка",
-            value=C[i, j],
-            x_repr=float(grid[i]),
-            y_repr=float(grid[j]),
-            x_strategy=x_strategy,
-            y_strategy=y_strategy,
-            delta_from_prev=None,
-            saddle_points=saddles,
-            br_result=None,
+            method="sedlo",
+            x=x,
+            y=y,
+            h=h,
+            delta_prev=None,
+            v_lower=v_lower,
+            v_upper=v_upper,
+            saddle_points=saddle_points,
         )
 
-    br = brown_robinson(C, epsilon=epsilon_br, max_iter=br_max_iter, start_row=0, start_col=0)
-    x_repr = float(np.dot(br.x_est, grid))
-    y_repr = float(np.dot(br.y_est, grid))
+    history = brown_robinson(
+        C,
+        epsilon=br_epsilon,
+        max_iter=br_max_iter,
+        start_row=0,
+        start_col=0,
+    )
+    last = history[-1]
 
-    return GridIterationResult(
-        N=N,
+    x_mix = np.asarray(last["x_est"], dtype=float)
+    y_mix = np.asarray(last["y_est"], dtype=float)
+
+    x = float(np.dot(x_mix, grid))
+    y = float(np.dot(y_mix, grid))
+    h = kernel(x, y, a, b, c, d, e)
+
+    return IterationResult(
+        iteration_no=0,
+        N=len(grid) - 1,
         grid=grid,
         matrix=C,
-        method="Браун-Робинсон",
-        value=br.value_mid,
-        x_repr=x_repr,
-        y_repr=y_repr,
-        x_strategy=br.x_est,
-        y_strategy=br.y_est,
-        delta_from_prev=None,
+        method="brown_robinson",
+        x=x,
+        y=y,
+        h=h,
+        delta_prev=None,
+        v_lower=v_lower,
+        v_upper=v_upper,
         saddle_points=[],
-        br_result=br,
+        br_iterations=int(last["k"]),
+        br_gap=float(last["gap"]),
+        br_upper=float(last["upper_best"]),
+        br_lower=float(last["lower_best"]),
+        x_mix=x_mix,
+        y_mix=y_mix,
     )
 
 
-# ------------------------------------------------------------
-# ОСНОВНОЙ ВНЕШНИЙ ЦИКЛ ПО N
-# ------------------------------------------------------------
-
-def solve_continuous_game_numerically(
+def solve_iteratively(
     a: float,
     b: float,
     c: float,
     d: float,
     e: float,
-    n_start: int,
-    n_max: int,
-    epsilon_outer: float,
-    epsilon_br: float,
+    outer_epsilon: float,
+    br_epsilon: float,
+    max_N: int,
     br_max_iter: int,
-) -> Tuple[List[GridIterationResult], Optional[GridIterationResult]]:
-    results: List[GridIterationResult] = []
-    prev_value: Optional[float] = None
-    final_result: Optional[GridIterationResult] = None
+):
+    results: list[IterationResult] = []
+    prev_h: float | None = None
 
-    for N in range(n_start, n_max + 1):
-        result = solve_grid_game(N, a, b, c, d, e, epsilon_br, br_max_iter)
+    for N in range(2, max_N + 1):
+        grid, C = build_matrix(a, b, c, d, e, N)
+        res = solve_matrix_game(C, grid, a, b, c, d, e, br_epsilon, br_max_iter)
+        res.iteration_no = N - 1
+        res.delta_prev = None if prev_h is None else abs(res.h - prev_h)
+        results.append(res)
 
-        if prev_value is None:
-            result.delta_from_prev = None
-        else:
-            result.delta_from_prev = abs(result.value - prev_value)
+        if prev_h is not None and res.delta_prev <= outer_epsilon:
+            return results, True
 
-        results.append(result)
+        prev_h = res.h
 
-        if prev_value is not None and result.delta_from_prev is not None and result.delta_from_prev <= epsilon_outer:
-            final_result = result
-            break
-
-        prev_value = result.value
-
-    if final_result is None and results:
-        final_result = results[-1]
-
-    return results, final_result
+    return results, False
 
 
-# ------------------------------------------------------------
-# ПЕЧАТЬ
-# ------------------------------------------------------------
+def matrix_to_string(C: np.ndarray, digits: int = 6) -> str:
+    rows = []
+    for row in C:
+        rows.append(" ".join(f"{float(value):>{digits + 6}.{digits}f}" for value in row))
+    return "\n".join(rows)
 
-def print_recognized_task() -> None:
-    print("РАСПОЗНАННОЕ УСЛОВИЕ ЛР3")
+
+def print_condition_text():
+    print("Рассматривается непрерывная антагонистическая игра на единичном квадрате")
+    print("0 <= x <= 1, 0 <= y <= 1 с функцией выигрыша:")
+    print("H(x, y) = a*x^2 + b*y^2 + c*x*y + d*x + e*y")
+    print()
+
+
+def print_analytic_solution(sol: ContinuousSolution, a: float, b: float, c: float, d: float, e: float):
+    print("Аналитическое решение непрерывной игры")
     print("-" * 80)
-    print("Нужно найти оптимальные стратегии непрерывной выпукло-вогнутой")
-    print("антагонистической игры на единичном квадрате аналитическим и")
-    print("численным методами.")
-    print()
-    print("Ядро игры:")
-    print("    H(x, y) = a*x^2 + b*y^2 + c*x*y + d*x + e*y,   x,y in [0,1].")
-    print()
-    print("Аналитическая часть:")
-    print("- проверить условия выпукло-вогнутости: H_xx = 2a < 0, H_yy = 2b > 0;")
-    print("- найти оптимальные стратегии из условий первого порядка и")
-    print("  ограничений x,y in [0,1];")
-    print("- вычислить цену игры h = H(x*, y*).")
-    print()
-    print("Численная часть:")
-    print("- заменить непрерывную игру матричной на сетке x_i=i/N, y_j=j/N, i,j=0..N;")
-    print("- при N=2 получается матрица 3x3 с точками 0, 0.5, 1.0;")
-    print("- на каждой сетке сначала искать седловую точку;")
-    print("- если седловой точки нет, решать матричную игру методом")
-    print("  Брауна-Робинсона (на основе кода из предыдущей лабораторной);")
-    print("- критерий остановки для ЛР3: сравнивать соседние оценки h^(N) и")
-    print("  останавливать процесс, когда |h^(N)-h^(N-1)| <= epsilon.")
-    print("- в отчёт удобно вывести первые 10 итераций по N и номер итерации,")
-    print("  на которой получен итоговый ответ.")
+    print(f"H(x, y) = {fr(a)}*x^2 + {fr(b)}*y^2 + {fr(c)}*x*y + {fr(d)}*x + {fr(e)}*y")
+    print(f"Оптимальная стратегия игрока A: x* = {fmt(sol.x)} = {fr(sol.x)}")
+    print(f"Оптимальная стратегия игрока B: y* = {fmt(sol.y)} = {fr(sol.y)}")
+    print(f"Цена игры: H(x*, y*) = {fmt(sol.h)} = {fr(sol.h)}")
+    print(f"Активный режим решения: {sol.regime}")
+    print(f"Hx(x*, y*) = {fmt(sol.hx)}")
+    print(f"Hy(x*, y*) = {fmt(sol.hy)}")
     print("-" * 80)
     print()
 
 
-def print_analytic_part(a: float, b: float, c: float, d: float, e: float) -> Optional[AnalyticSolution]:
-    print("АНАЛИТИЧЕСКОЕ РЕШЕНИЕ")
-    print("-" * 80)
-    print(f"H(x, y) = {fmt(a)}*x^2 + {fmt(b)}*y^2 + {fmt(c)}*x*y + {fmt(d)}*x + {fmt(e)}*y")
-    print(f"H_xx = 2a = {fmt(2*a)}")
-    print(f"H_yy = 2b = {fmt(2*b)}")
+def print_iteration_details(result: IterationResult):
+    size = result.N + 1
+    print(f"Итерация {result.iteration_no}: разбиение N = {result.N}, матрица {size}x{size}")
 
-    if 2 * a < 0 and 2 * b > 0:
-        print("Условия выпукло-вогнутости выполнены: H_xx < 0, H_yy > 0.")
-    else:
-        print("ВНИМАНИЕ: условия выпукло-вогнутости НЕ выполнены.")
-        print("Код всё равно попытается найти седловую точку на [0,1]x[0,1].")
-
-    print()
-    print("Производные:")
-    print(f"H_x = 2*a*x + c*y + d = {fmt(2*a)}*x + {fmt(c)}*y + {fmt(d)}")
-    print(f"H_y = 2*b*y + c*x + e = {fmt(2*b)}*y + {fmt(c)}*x + {fmt(e)}")
-    print()
-
-    sol = continuous_analytic_solution(a, b, c, d, e)
-    if sol is None:
-        print("Аналитическое решение на [0,1]x[0,1] не найдено.")
+    if SHOW_MATRICES_FOR_FIRST_ITERATIONS:
+        print("Матрица H^(N):")
+        print(matrix_to_string(result.matrix))
         print()
-        return None
 
-    print(f"Тип найденного решения: {sol.kind}")
-    print(f"x* = {fmt(sol.x_star)} = {fr(sol.x_star)}")
-    print(f"y* = {fmt(sol.y_star)} = {fr(sol.y_star)}")
-    print(f"h  = H(x*, y*) = {fmt(sol.h_star)} = {fr(sol.h_star)}")
-    print()
-    return sol
+    if result.method == "sedlo":
+        saddles_str = ", ".join(
+            f"({i + 1}, {j + 1})" for i, j in result.saddle_points
+        )
+        print("Решение дискретной игры: седловая точка")
+        print(f"Координаты седловых позиций матрицы: {saddles_str}")
+    else:
+        print("Решение дискретной игры: метод Брауна–Робинсон")
+        print(f"Итераций Брауна–Робинсон: {result.br_iterations}")
+        print(f"Лучшая верхняя оценка: {fmt(result.br_upper)}")
+        print(f"Лучшая нижняя оценка: {fmt(result.br_lower)}")
+        print(f"Погрешность Брауна–Робинсон: {fmt(result.br_gap)}")
+        print(f"x~ по сетке: {vector_to_str(result.x_mix)}")
+        print(f"y~ по сетке: {vector_to_str(result.y_mix)}")
 
+    print(f"x = {fmt(result.x)} = {fr(result.x)}")
+    print(f"y = {fmt(result.y)} = {fr(result.y)}")
+    print(f"H = {fmt(result.h)} = {fr(result.h)}")
 
-def print_outer_iterations(results: List[GridIterationResult], final_result: GridIterationResult) -> None:
-    print("ЧИСЛЕННОЕ РЕШЕНИЕ")
+    if result.delta_prev is None:
+        print("Δ с предыдущим приближением: ---")
+    else:
+        print(f"Δ с предыдущим приближением: {fmt(result.delta_prev)}")
     print("-" * 80)
-    print("Первые итерации по N (для отчёта):")
-    print(
-        f"{'iter':>4} | {'N':>4} | {'размер':>8} | {'метод':>18} | {'h^(N)':>12} | {'x~':>10} | {'y~':>10} | {'|Δh|':>12}"
+    print()
+
+
+def print_first_iterations_summary(results: list[IterationResult], limit: int = PRINT_FIRST_ITERATIONS):
+    print("Первые итерации уточнения")
+    print("-" * 120)
+    header = (
+        f"{'Ит.':>4} | {'N':>4} | {'Размер':>8} | {'Метод':>16} | "
+        f"{'x':>10} | {'y':>10} | {'H':>12} | {'Δ_prev':>12}"
     )
-    print("-" * 100)
+    print(header)
+    print("-" * 120)
 
-    shown = min(OUTER_ITERS_FOR_REPORT, len(results))
-    for idx in range(shown):
-        r = results[idx]
-        delta_text = "-" if r.delta_from_prev is None else fmt(r.delta_from_prev)
+    for res in results[:limit]:
+        size = f"{res.N + 1}x{res.N + 1}"
+        method = "седло" if res.method == "sedlo" else "Браун-Робинсон"
+        delta_str = "---" if res.delta_prev is None else fmt(res.delta_prev)
         print(
-            f"{idx + 1:>4} | {r.N:>4} | {r.N + 1:>8} | {r.method:>18} | {fmt(r.value):>12} | {fmt(r.x_repr):>10} | {fmt(r.y_repr):>10} | {delta_text:>12}"
+            f"{res.iteration_no:>4} | {res.N:>4} | {size:>8} | {method:>16} | "
+            f"{fmt(res.x):>10} | {fmt(res.y):>10} | {fmt(res.h):>12} | {delta_str:>12}"
         )
 
-    print("-" * 100)
-    print()
-
-    stop_iter = len(results)
-    print(f"Критерий остановки выполнен на итерации по N: {stop_iter}")
-    print(f"Соответствующее значение N = {final_result.N}")
-    print(f"Размер матрицы на последней итерации: {(final_result.N + 1)} x {(final_result.N + 1)}")
+    print("-" * 120)
     print()
 
 
-def print_iteration_details(r: GridIterationResult, iteration_index: int) -> None:
-    print(f"ДЕТАЛИ ИТЕРАЦИИ #{iteration_index} (N={r.N}, размер {r.N + 1}x{r.N + 1})")
+def print_final_summary(results: list[IterationResult], outer_epsilon: float, converged: bool):
+    last = results[-1]
+
+    print("Итоговый результат итерационного уточнения")
     print("-" * 80)
+    print(f"Критерий останова: |H_k - H_(k-1)| <= {outer_epsilon}")
+    print(f"Итерация, на которой получен текущий результат: {last.iteration_no}")
+    print(f"Разбиение: N = {last.N}, матрица размера {last.N + 1}x{last.N + 1}")
 
-    if r.N - N_START < PRINT_MATRICES_FOR_FIRST_ITERATIONS:
-        print("Матрица игры H^(N):")
-        print(matrix_to_pretty_str(r.matrix, digits=6))
-        print()
-
-    if r.method == "седловая точка":
-        print("На сетке найдена седловая точка в чистых стратегиях.")
-        for i, j in r.saddle_points:
-            print(
-                f"Седловая точка: i={i}, j={j}, x={fmt(r.grid[i])}, y={fmt(r.grid[j])}, H={fmt(r.matrix[i, j])}"
-            )
+    if converged:
+        print("Критерий останова выполнен.")
     else:
-        print("Седловой точки нет, применён метод Брауна-Робинсона.")
-        assert r.br_result is not None
-        br = r.br_result
-        print(f"Число итераций Брауна-Робинсона: {br.iterations}")
-        print(f"Лучшая верхняя оценка: {fmt(br.upper_best)}")
-        print(f"Лучшая нижняя оценка: {fmt(br.lower_best)}")
-        print(f"Погрешность BR:       {fmt(br.gap)}")
-        print(f"Средняя оценка цены:  {fmt(br.value_mid)}")
-        print()
-        print("Первые 10 итераций Брауна-Робинсона:")
-        print(
-            f"{'k':>4} | {'i':>4} | {'j':>4} | {'v_max/k':>12} | {'v_min/k':>12} | {'min v_max':>12} | {'max v_min':>12} | {'E':>12}"
-        )
-        print("-" * 96)
-        for rec in br.history_first_10:
-            print(
-                f"{rec['k']:>4} | {rec['row_choice']:>4} | {rec['col_choice']:>4} | "
-                f"{fmt(rec['upper_curr']):>12} | {fmt(rec['lower_curr']):>12} | "
-                f"{fmt(rec['upper_best']):>12} | {fmt(rec['lower_best']):>12} | {fmt(rec['gap']):>12}"
-            )
-        print()
+        print("Критерий останова не выполнен: достигнут лимит по N.")
 
-    print(f"Представитель x~ = {fmt(r.x_repr)} = {fr(r.x_repr)}")
-    print(f"Представитель y~ = {fmt(r.y_repr)} = {fr(r.y_repr)}")
-    print(f"h^(N) = {fmt(r.value)} = {fr(r.value)}")
-    if r.delta_from_prev is not None:
-        print(f"|h^(N) - h^(N-1)| = {fmt(r.delta_from_prev)}")
-    print()
+    print(f"Метод решения последней дискретной игры: {'седловая точка' if last.method == 'sedlo' else 'Браун-Робинсон'}")
+    print(f"x = {fmt(last.x)} = {fr(last.x)}")
+    print(f"y = {fmt(last.y)} = {fr(last.y)}")
+    print(f"H = {fmt(last.h)} = {fr(last.h)}")
 
+    if last.delta_prev is not None:
+        print(f"Последнее изменение |ΔH| = {fmt(last.delta_prev)}")
 
-def print_final_summary(final_result: GridIterationResult, analytic: Optional[AnalyticSolution]) -> None:
-    print("ИТОГ")
-    print("-" * 80)
-    print(f"Численный метод на последней итерации: {final_result.method}")
-    print(f"N = {final_result.N}")
-    print(f"Размер матрицы: {final_result.N + 1} x {final_result.N + 1}")
-    print(f"Численное решение: x~ = {fmt(final_result.x_repr)}, y~ = {fmt(final_result.y_repr)}")
-    print(f"Численная цена игры: h^(N) = {fmt(final_result.value)}")
-    print()
+    if last.method != "sedlo":
+        print(f"Итераций Брауна–Робинсон на последнем шаге: {last.br_iterations}")
+        print(f"Погрешность Брауна–Робинсон на последнем шаге: {fmt(last.br_gap)}")
 
-    print("Смешанная стратегия игрока A на последней сетке:")
-    print(vector_to_str(final_result.x_strategy))
-    print("Смешанная стратегия игрока B на последней сетке:")
-    print(vector_to_str(final_result.y_strategy))
-    print()
-
-    if analytic is not None:
-        print("Сравнение с аналитическим решением:")
-        print(f"x*  = {fmt(analytic.x_star)}")
-        print(f"y*  = {fmt(analytic.y_star)}")
-        print(f"h   = {fmt(analytic.h_star)}")
-        print(f"|x~-x*| = {fmt(abs(final_result.x_repr - analytic.x_star))}")
-        print(f"|y~-y*| = {fmt(abs(final_result.y_repr - analytic.y_star))}")
-        print(f"|h^(N)-h| = {fmt(abs(final_result.value - analytic.h_star))}")
     print("-" * 80)
     print()
 
 
-# ------------------------------------------------------------
-# MAIN
-# ------------------------------------------------------------
+def print_configuration(args, coeffs: dict[str, float]):
+    print("Используемые параметры")
+    print("-" * 80)
+    print(f"Вариант: {args.variant}")
+    print(f"a = {fr(coeffs['a'])}, b = {fr(coeffs['b'])}, c = {fr(coeffs['c'])}, d = {fr(coeffs['d'])}, e = {fr(coeffs['e'])}")
+    print(f"Критерий останова по внешней итерации: {args.outer_epsilon}")
+    print(f"Точность Брауна–Робинсон: {args.br_epsilon}")
+    print(f"Максимальное N: {args.max_n}")
+    print(f"Максимум итераций Брауна–Робинсон: {args.br_max_iter}")
 
-def main() -> None:
-    a = A_COEF
-    b = B_COEF
-    c = C_COEF
-    d = D_COEF
-    e = E_COEF
+    if LAB1["source_path"] is not None:
+        print(f"Функции из lab_1.py загружены из: {LAB1['source_path']}")
+    else:
+        print("Файл lab_1.py не найден, использованы встроенные совместимые функции.")
+    print("-" * 80)
+    print()
 
-    print_recognized_task()
-    analytic = print_analytic_part(a, b, c, d, e)
 
-    results, final_result = solve_continuous_game_numerically(
+def parse_args():
+    parser = argparse.ArgumentParser(
+        description="ЛР №3. Решение непрерывной антагонистической игры на единичном квадрате."
+    )
+    parser.add_argument("--variant", type=int, default=DEFAULT_VARIANT, choices=sorted(VARIANTS.keys()))
+    parser.add_argument("--outer-epsilon", type=float, default=DEFAULT_OUTER_EPSILON)
+    parser.add_argument("--br-epsilon", type=float, default=DEFAULT_BR_EPSILON)
+    parser.add_argument("--max-n", type=int, default=DEFAULT_MAX_N)
+    parser.add_argument("--br-max-iter", type=int, default=DEFAULT_BR_MAX_ITER)
+    parser.add_argument(
+        "--no-matrices",
+        action="store_true",
+        help="Не печатать матрицы на первых итерациях.",
+    )
+    return parser.parse_args()
+
+
+def main():
+    global SHOW_MATRICES_FOR_FIRST_ITERATIONS
+
+    args = parse_args()
+    if args.no_matrices:
+        SHOW_MATRICES_FOR_FIRST_ITERATIONS = False
+
+    coeffs = VARIANTS[args.variant]
+    a, b, c, d, e = coeffs["a"], coeffs["b"], coeffs["c"], coeffs["d"], coeffs["e"]
+
+    print_condition_text()
+    print_configuration(args, coeffs)
+
+    analytic = solve_continuous_game_exact(a, b, c, d, e)
+    print_analytic_solution(analytic, a, b, c, d, e)
+
+    results, converged = solve_iteratively(
         a=a,
         b=b,
         c=c,
         d=d,
         e=e,
-        n_start=N_START,
-        n_max=N_MAX,
-        epsilon_outer=EPSILON_OUTER,
-        epsilon_br=EPSILON_BR,
-        br_max_iter=BR_MAX_ITER,
+        outer_epsilon=args.outer_epsilon,
+        br_epsilon=args.br_epsilon,
+        max_N=args.max_n,
+        br_max_iter=args.br_max_iter,
     )
 
-    if final_result is None:
-        print("Численное решение не получено.")
-        return
+    print_first_iterations_summary(results)
 
-    print_outer_iterations(results, final_result)
+    for res in results[:PRINT_FIRST_ITERATIONS]:
+        print_iteration_details(res)
 
-    # Подробно печатаем первые несколько итераций и последнюю
-    detail_count = min(OUTER_ITERS_FOR_REPORT, len(results))
-    for idx in range(detail_count):
-        print_iteration_details(results[idx], idx + 1)
+    if len(results) > PRINT_FIRST_ITERATIONS:
+        print("...")
+        print(f"Подробный вывод после {PRINT_FIRST_ITERATIONS}-й итерации опущен.")
+        print()
 
-    if len(results) > detail_count:
-        print("ПОСЛЕДНЯЯ ИТЕРАЦИЯ")
-        print("=" * 80)
-        print_iteration_details(final_result, len(results))
+    print_final_summary(results, args.outer_epsilon, converged)
 
-    print_final_summary(final_result, analytic)
+    last = results[-1]
+    print("Сравнение аналитического и итерационного решения")
+    print("-" * 80)
+    print(f"Аналитическое:  x* = {fmt(analytic.x)}, y* = {fmt(analytic.y)}, H* = {fmt(analytic.h)}")
+    print(f"Итерационное:   x  = {fmt(last.x)}, y  = {fmt(last.y)}, H  = {fmt(last.h)}")
+    print(f"|x - x*| = {fmt(abs(last.x - analytic.x))}")
+    print(f"|y - y*| = {fmt(abs(last.y - analytic.y))}")
+    print(f"|H - H*| = {fmt(abs(last.h - analytic.h))}")
+    print("-" * 80)
 
 
 if __name__ == "__main__":
