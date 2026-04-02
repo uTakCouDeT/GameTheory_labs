@@ -282,7 +282,7 @@ def print_first_iterations_summary(results: list[IterationResult], limit: int = 
 
     for res in results[:limit]:
         size = f"{res.N + 1}x{res.N + 1}"
-        method = "седло" if res.method == "sedlo" else "Браун-Робинсон"
+        method = "седло" if res.method == "sedlo" else "Брауна-Робинсон"
         delta_str = "---" if res.delta_prev is None else fmt(res.delta_prev)
         print(
             f"{res.iteration_no:>4} | {res.N:>4} | {size:>8} | {method:>16} | "
