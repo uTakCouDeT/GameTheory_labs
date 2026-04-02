@@ -2,28 +2,25 @@
 # -*- coding: utf-8 -*-
 
 """
-Лабораторная работа №5 (в вашем наборе файлов она переименована в lab_3.py).
+Лабораторная работа №5 из методички (в вашем наборе файлов она переименована в lab_3.py).
 Тема: равновесие по Нэшу, оптимальность по Парето и смешанные стратегии в биматричных играх.
 
-Что делает скрипт:
+Скрипт:
 1) проверяет алгоритмы на трёх классических играх;
 2) генерирует случайную биматричную игру 10x10;
-3) решает вариант из таблицы Л5.1 (по умолчанию вариант 13);
+3) решает вариант из таблицы Л5.1;
 4) для игр 2x2 ищет равновесия в чистых и смешанных стратегиях;
-5) выводит компактный цветной результат: матрицу игры и выделяет на ней:
-   - N  : строгие равновесия по Нэшу (по замечанию с семинара),
-   - P  : Парето-оптимальные ситуации,
-   - NP : пересечение этих множеств.
+5) печатает компактный и наглядный результат.
 
-Дополнительно:
-- классическое определение Нэша (>=) тоже вычисляется и печатается в сводке;
-- цвет можно отключить флагом --no-color;
-- более подробный вывод можно включить флагом --verbose.
+Важно:
+- дополнительно считаются "строгие" равновесия по Нэшу по замечанию с семинара:
+  если существует одностороннее отклонение с тем же выигрышем, такую ситуацию
+  НЕ считаем устойчивой;
+- стандартное (классическое) определение Нэша тоже выводится отдельно.
 """
 
 from __future__ import annotations
 
-import argparse
 import random
 from typing import Dict, List, Optional, Sequence, Tuple
 
@@ -31,33 +28,38 @@ Number = float
 Matrix = List[List[Number]]
 Position = Tuple[int, int]  # индексы с нуля
 
+# ============================================================================
+# НАСТРОЙКИ ЗАПУСКА
+# Меняйте значения здесь, а не через аргументы командной строки.
+# ============================================================================
+USE_COLOR_OUTPUT = True
+VERBOSE_OUTPUT = False
+
+RANDOM_GAME_SEED = 567
+RANDOM_GAME_SIZE = 10
+RANDOM_GAME_LOW = -50
+RANDOM_GAME_HIGH = 50
+
+SHOW_CLASSIC_GAMES = True
+SHOW_RANDOM_GAME = True
+SHOW_VARIANT_GAME = True
+
 
 # ============================================================================
-# Настройки запуска
-# ============================================================================
-DEFAULT_VARIANT = 13
-DEFAULT_RANDOM_SEED = 567
-RANDOM_SIZE = 10
-RANDOM_LOW = -50
-RANDOM_HIGH = 50
-
-
-# ============================================================================
-# Цвета ANSI
+# ANSI-цвета для консоли
 # ============================================================================
 class Ansi:
     RESET = "\033[0m"
     BOLD = "\033[1m"
-    DIM = "\033[2m"
-    BLUE = "\033[44;97m"     # Nash
-    GREEN = "\033[42;30m"    # Pareto
-    MAGENTA = "\033[45;97m"  # Intersection
+    BLUE_BG = "\033[44;97m"  # Nash
+    GREEN_BG = "\033[42;30m"  # Pareto
+    MAGENTA_BG = "\033[45;97m"  # Nash ∩ Pareto
     CYAN = "\033[36m"
     YELLOW = "\033[33m"
 
 
-def colorize(text: str, style: str, use_color: bool) -> str:
-    if not use_color:
+def colorize(text: str, style: str) -> str:
+    if not USE_COLOR_OUTPUT or not style:
         return text
     return f"{style}{text}{Ansi.RESET}"
 
@@ -69,12 +71,11 @@ CLASSIC_GAMES = {
     "Дилемма заключённого": {
         "rows": ["М", "Г"],
         "cols": ["М", "Г"],
-        # Матрица по вашим записям с семинара
         "pairs": [
             [(-0.5, -0.5), (-10, 0)],
             [(0, -10), (-5, -5)],
         ],
-        "comment": "По замечанию с семинара устойчивой по Нэшу считается только (Г, Г).",
+        "comment": "По замечанию с семинара устойчивой по Нэшу считается только ситуация (Г, Г).",
     },
     "Семейный спор": {
         "rows": ["Футбол", "Театр"],
@@ -88,15 +89,13 @@ CLASSIC_GAMES = {
     "Перекрёсток (Феррари / КамАЗ)": {
         "rows": ["Стоп", "Ехать"],
         "cols": ["Стоп", "Ехать"],
-        # Несимметричный учебный вариант: Ferrari vs КамАЗ
         "pairs": [
             [(1.0, 1.0), (0.7, 2.0)],
             [(2.0, 0.9), (-12.0, -2.0)],
         ],
-        "comment": "Несимметричный вариант перекрёстка для наглядной проверки алгоритма.",
+        "comment": "Несимметричный учебный вариант перекрёстка для проверки алгоритма.",
     },
 }
-
 
 VARIANTS: Dict[int, List[List[Tuple[Number, Number]]]] = {
     1: [[(5, 0), (8, 4)], [(7, 6), (6, 3)]],
@@ -147,24 +146,24 @@ def print_separator(char: str = "=", width: int = 96) -> None:
     print(char * width)
 
 
-def intersection(xs: Sequence[Position], ys: Sequence[Position]) -> List[Position]:
-    return sorted(set(xs) & set(ys))
-
-
-def positions_brief(
-    positions: Sequence[Position],
-    pairs: Sequence[Sequence[Tuple[Number, Number]]],
-    row_labels: Optional[Sequence[str]] = None,
-    col_labels: Optional[Sequence[str]] = None,
+def positions_to_text(
+        positions: Sequence[Position],
+        pairs: Sequence[Sequence[Tuple[Number, Number]]],
+        row_labels: Optional[Sequence[str]] = None,
+        col_labels: Optional[Sequence[str]] = None,
 ) -> str:
     if not positions:
         return "нет"
-    items = []
+    parts = []
     for i, j in positions:
-        r = row_labels[i] if row_labels else f"A{i+1}"
-        c = col_labels[j] if col_labels else f"B{j+1}"
-        items.append(f"({r}, {c}) = {pair_str(*pairs[i][j])}")
-    return "; ".join(items)
+        r_name = row_labels[i] if row_labels else f"A{i + 1}"
+        c_name = col_labels[j] if col_labels else f"B{j + 1}"
+        parts.append(f"({r_name}, {c_name}) = {pair_str(*pairs[i][j])}")
+    return "; ".join(parts)
+
+
+def intersection(xs: Sequence[Position], ys: Sequence[Position]) -> List[Position]:
+    return sorted(set(xs) & set(ys))
 
 
 # ============================================================================
@@ -225,7 +224,7 @@ def find_pareto_weak(a: Matrix, b: Matrix) -> List[Position]:
 
 
 # ============================================================================
-# Цветная печать матрицы
+# Цветная матрица результатов
 # ============================================================================
 def cell_marker(pos: Position, nash: set[Position], pareto: set[Position]) -> str:
     in_nash = pos in nash
@@ -236,57 +235,53 @@ def cell_marker(pos: Position, nash: set[Position], pareto: set[Position]) -> st
         return "N"
     if in_pareto:
         return "P"
-    return "  "
+    return " "
 
 
 def cell_style(pos: Position, nash: set[Position], pareto: set[Position]) -> str:
     in_nash = pos in nash
     in_pareto = pos in pareto
     if in_nash and in_pareto:
-        return Ansi.MAGENTA
+        return Ansi.MAGENTA_BG
     if in_nash:
-        return Ansi.BLUE
+        return Ansi.BLUE_BG
     if in_pareto:
-        return Ansi.GREEN
+        return Ansi.GREEN_BG
     return ""
 
 
-def print_legend(use_color: bool) -> None:
+def print_legend() -> None:
     print("Легенда:")
-    print("  " + colorize("  N  ", Ansi.BLUE, use_color) + " — строгий Нэш")
-    print("  " + colorize("  P  ", Ansi.GREEN, use_color) + " — Парето")
-    print("  " + colorize(" NP  ", Ansi.MAGENTA, use_color) + " — пересечение")
+    print("  " + colorize("  N  ", Ansi.BLUE_BG) + " — строгий Нэш")
+    print("  " + colorize("  P  ", Ansi.GREEN_BG) + " — сильный Парето")
+    print("  " + colorize(" NP  ", Ansi.MAGENTA_BG) + " — пересечение")
     print()
 
 
-def print_bimatrix_colored(
-    title: str,
-    pairs: Sequence[Sequence[Tuple[Number, Number]]],
-    nash_positions: Sequence[Position],
-    pareto_positions: Sequence[Position],
-    row_labels: Optional[Sequence[str]] = None,
-    col_labels: Optional[Sequence[str]] = None,
-    use_color: bool = True,
+def print_colored_matrix(
+        pairs: Sequence[Sequence[Tuple[Number, Number]]],
+        nash: Sequence[Position],
+        pareto: Sequence[Position],
+        row_labels: Optional[Sequence[str]] = None,
+        col_labels: Optional[Sequence[str]] = None,
 ) -> None:
     m = len(pairs)
     n = len(pairs[0])
     if row_labels is None:
-        row_labels = [f"A{i+1}" for i in range(m)]
+        row_labels = [f"A{i + 1}" for i in range(m)]
     if col_labels is None:
-        col_labels = [f"B{j+1}" for j in range(n)]
+        col_labels = [f"B{j + 1}" for j in range(n)]
 
-    nash_set = set(nash_positions)
-    pareto_set = set(pareto_positions)
-
-    print(title)
-    print_legend(use_color)
+    nash_set = set(nash)
+    pareto_set = set(pareto)
 
     widths = []
     for j in range(n):
         max_len = len(str(col_labels[j]))
         for i in range(m):
-            content = f"{pair_str(*pairs[i][j])} {cell_marker((i, j), nash_set, pareto_set)}"
-            max_len = max(max_len, len(content))
+            marker = cell_marker((i, j), nash_set, pareto_set)
+            cell_text = f"{pair_str(*pairs[i][j])} {marker}".rstrip()
+            max_len = max(max_len, len(cell_text))
         widths.append(max_len + 2)
 
     first_col_w = max(len(max(row_labels, key=len)), 8)
@@ -298,11 +293,11 @@ def print_bimatrix_colored(
     for i in range(m):
         line = f"{row_labels[i]:>{first_col_w}} |"
         for j in range(n):
-            pos = (i, j)
-            raw = f"{pair_str(*pairs[i][j])} {cell_marker(pos, nash_set, pareto_set)}"
-            visible = f"{raw:^{widths[j]}}"
-            styled = colorize(visible, cell_style(pos, nash_set, pareto_set), use_color)
-            line += styled
+            marker = cell_marker((i, j), nash_set, pareto_set)
+            cell_text = f"{pair_str(*pairs[i][j])} {marker}".rstrip()
+            padded = f"{cell_text:^{widths[j]}}"
+            style = cell_style((i, j), nash_set, pareto_set)
+            line += colorize(padded, style) if style else padded
         print(line)
     print()
 
@@ -362,10 +357,7 @@ def mixed_equilibrium_2x2(a: Matrix, b: Matrix) -> Dict[str, object]:
     b11, b12 = b[0]
     b21, b22 = b[1]
 
-    result: Dict[str, object] = {
-        "exists": False,
-        "reason": None,
-    }
+    result: Dict[str, object] = {"exists": False, "reason": None}
 
     denom_q = a11 - a12 - a21 + a22
     denom_p = b11 - b12 - b21 + b22
@@ -373,7 +365,10 @@ def mixed_equilibrium_2x2(a: Matrix, b: Matrix) -> Dict[str, object]:
     result["denom_p"] = denom_p
 
     if abs(denom_q) < 1e-12 or abs(denom_p) < 1e-12:
-        result["reason"] = "Один из знаменателей в формулах безразличия равен нулю."
+        result["reason"] = (
+            "Одна из формул безразличия вырождается: знаменатель равен нулю, "
+            "поэтому полностью смешанную ситуацию построить нельзя."
+        )
         return result
 
     q = (a22 - a12) / denom_q
@@ -387,7 +382,10 @@ def mixed_equilibrium_2x2(a: Matrix, b: Matrix) -> Dict[str, object]:
     result["y"] = y
 
     if not (0 < p < 1 and 0 < q < 1):
-        result["reason"] = "Решение лежит вне интервала (0, 1), полностью смешанного равновесия нет."
+        result["reason"] = (
+            "Решение уравнений безразличия лежит на границе или вне [0, 1], "
+            "поэтому полностью смешанной равновесной ситуации нет."
+        )
         return result
 
     v1_from_row1 = q * a11 + (1 - q) * a12
@@ -436,71 +434,80 @@ def mixed_equilibrium_2x2(a: Matrix, b: Matrix) -> Dict[str, object]:
 
 
 def print_mixed_analysis(
-    a: Matrix,
-    b: Matrix,
-    pairs: Sequence[Sequence[Tuple[Number, Number]]],
-    row_labels: Optional[Sequence[str]] = None,
-    col_labels: Optional[Sequence[str]] = None,
-    verbose: bool = False,
+        a: Matrix,
+        b: Matrix,
+        pairs: Sequence[Sequence[Tuple[Number, Number]]],
+        row_labels: Optional[Sequence[str]] = None,
+        col_labels: Optional[Sequence[str]] = None,
 ) -> None:
     if size_of(a) != (2, 2):
+        print("Смешанные стратегии: анализ выполняется только для игр 2x2.\n")
         return
+
+    print("Смешанные стратегии")
+    print("-" * 96)
 
     dom_row = has_strictly_dominant_row_strategy(a)
     dom_col = has_strictly_dominant_col_strategy(b)
-    pure_nash = find_nash_equilibria(a, b, strict=False)
-    mix = mixed_equilibrium_2x2(a, b)
 
-    print("Смешанные стратегии:")
     if dom_row is None:
-        print("  • У игрока 1 строго доминирующей стратегии нет.")
+        print("У игрока 1 строго доминирующей стратегии нет.")
     else:
         name = row_labels[dom_row] if row_labels else f"A{dom_row + 1}"
-        print(f"  • У игрока 1 есть строго доминирующая стратегия: {name}.")
+        print(f"У игрока 1 есть строго доминирующая стратегия: {name}.")
 
     if dom_col is None:
-        print("  • У игрока 2 строго доминирующей стратегии нет.")
+        print("У игрока 2 строго доминирующей стратегии нет.")
     else:
         name = col_labels[dom_col] if col_labels else f"B{dom_col + 1}"
-        print(f"  • У игрока 2 есть строго доминирующая стратегия: {name}.")
+        print(f"У игрока 2 есть строго доминирующая стратегия: {name}.")
 
-    print(f"  • Чистые равновесия по Нэшу: {positions_brief(pure_nash, pairs, row_labels, col_labels)}")
+    pure_nash = find_nash_equilibria(a, b, strict=False)
+    print("Чистые равновесия по Нэшу:")
+    print(positions_to_text(pure_nash, pairs, row_labels, col_labels))
 
+    mix = mixed_equilibrium_2x2(a, b)
     if not mix["exists"]:
-        print("  • Полностью смешанная ситуация равновесия: не существует.")
-        print(f"    Причина: {mix['reason']}")
+        print("Полностью смешанная равновесная ситуация: не существует.")
+        print(f"Причина: {mix['reason']}")
         print()
         return
 
-    print("  • Полностью смешанная ситуация равновесия существует.")
+    print("Полностью смешанная равновесная ситуация существует.")
+    print(f"Знаменатель для q: {fmt(mix['denom_q'])}")
+    print(f"Знаменатель для p: {fmt(mix['denom_p'])}")
     print(
-        f"    x = [{fmt(mix['x'][0])}, {fmt(mix['x'][1])}], "
-        f"y = [{fmt(mix['y'][0])}, {fmt(mix['y'][1])}]"
+        f"x = [p, 1-p] = [{fmt(mix['x'][0])}, {fmt(mix['x'][1])}], "
+        f"y = [q, 1-q] = [{fmt(mix['y'][0])}, {fmt(mix['y'][1])}]"
     )
-    print(f"    v1 = {fmt(mix['v1'])}, v2 = {fmt(mix['v2'])}")
+    print(
+        f"Проверка игрока 1: v1(row1) = {fmt(mix['v1_from_row1'])}, "
+        f"v1(row2) = {fmt(mix['v1_from_row2'])}"
+    )
+    print(
+        f"Проверка игрока 2: v2(col1) = {fmt(mix['v2_from_col1'])}, "
+        f"v2(col2) = {fmt(mix['v2_from_col2'])}"
+    )
+    print(f"Равновесные выигрыши: v1 = {fmt(mix['v1'])}, v2 = {fmt(mix['v2'])}")
 
-    if verbose:
+    if VERBOSE_OUTPUT and mix.get("a_inv") is not None and mix.get("b_inv") is not None:
+        print("Проверка по формуле из методички:")
+        print(f"det(A) = {fmt(mix['det_a'])}, det(B) = {fmt(mix['det_b'])}")
         print(
-            f"    Проверка безразличия игрока 1: {fmt(mix['v1_from_row1'])} = {fmt(mix['v1_from_row2'])}"
+            f"A^(-1) = [[{fmt(mix['a_inv'][0][0])}, {fmt(mix['a_inv'][0][1])}], "
+            f"[{fmt(mix['a_inv'][1][0])}, {fmt(mix['a_inv'][1][1])}]]"
         )
         print(
-            f"    Проверка безразличия игрока 2: {fmt(mix['v2_from_col1'])} = {fmt(mix['v2_from_col2'])}"
+            f"B^(-1) = [[{fmt(mix['b_inv'][0][0])}, {fmt(mix['b_inv'][0][1])}], "
+            f"[{fmt(mix['b_inv'][1][0])}, {fmt(mix['b_inv'][1][1])}]]"
         )
-        if mix.get("a_inv") is not None and mix.get("b_inv") is not None:
-            print(f"    det(A) = {fmt(mix['det_a'])}, det(B) = {fmt(mix['det_b'])}")
+        if mix.get("v1_formula") is not None and mix.get("v2_formula") is not None:
             print(
-                f"    A^(-1) = [[{fmt(mix['a_inv'][0][0])}, {fmt(mix['a_inv'][0][1])}], "
-                f"[{fmt(mix['a_inv'][1][0])}, {fmt(mix['a_inv'][1][1])}]]"
+                f"v1 = 1 / (u * A^(-1) * u) = {fmt(mix['v1_formula'])}, "
+                f"v2 = 1 / (u * B^(-1) * u) = {fmt(mix['v2_formula'])}"
             )
-            print(
-                f"    B^(-1) = [[{fmt(mix['b_inv'][0][0])}, {fmt(mix['b_inv'][0][1])}], "
-                f"[{fmt(mix['b_inv'][1][0])}, {fmt(mix['b_inv'][1][1])}]]"
-            )
-            if mix.get("v1_formula") is not None and mix.get("v2_formula") is not None:
-                print(
-                    f"    По формуле методички: x = [{fmt(mix['x_formula'][0])}, {fmt(mix['x_formula'][1])}], "
-                    f"y = [{fmt(mix['y_formula'][0])}, {fmt(mix['y_formula'][1])}]"
-                )
+            print(f"x = v2 * u * B^(-1) = [{fmt(mix['x_formula'][0])}, {fmt(mix['x_formula'][1])}]")
+            print(f"y = v1 * A^(-1) * u = [{fmt(mix['y_formula'][0])}, {fmt(mix['y_formula'][1])}]")
     print()
 
 
@@ -508,11 +515,11 @@ def print_mixed_analysis(
 # Генерация случайной биматричной игры
 # ============================================================================
 def generate_random_bimatrix(
-    rows: int,
-    cols: int,
-    low: int,
-    high: int,
-    seed: int,
+        rows: int,
+        cols: int,
+        low: int,
+        high: int,
+        seed: int,
 ) -> List[List[Tuple[Number, Number]]]:
     rng = random.Random(seed)
     pairs = []
@@ -525,16 +532,14 @@ def generate_random_bimatrix(
 
 
 # ============================================================================
-# Анализ одной игры
+# Полный анализ одной игры
 # ============================================================================
 def analyze_game(
-    name: str,
-    pairs: Sequence[Sequence[Tuple[Number, Number]]],
-    row_labels: Optional[Sequence[str]] = None,
-    col_labels: Optional[Sequence[str]] = None,
-    extra_comment: Optional[str] = None,
-    use_color: bool = True,
-    verbose: bool = False,
+        name: str,
+        pairs: Sequence[Sequence[Tuple[Number, Number]]],
+        row_labels: Optional[Sequence[str]] = None,
+        col_labels: Optional[Sequence[str]] = None,
+        extra_comment: Optional[str] = None,
 ) -> None:
     a, b = pairs_to_matrices(pairs)
 
@@ -545,134 +550,80 @@ def analyze_game(
     inter = intersection(nash_strict, pareto_strong)
 
     print_separator("=")
-    print(colorize(name, Ansi.BOLD + Ansi.CYAN, use_color))
+    print(name)
     print_separator("=")
     if extra_comment:
         print(extra_comment)
         print()
 
-    print_bimatrix_colored(
-        title="Матрица игры (цветом выделены искомые клетки):",
-        pairs=pairs,
-        nash_positions=nash_strict,
-        pareto_positions=pareto_strong,
-        row_labels=row_labels,
-        col_labels=col_labels,
-        use_color=use_color,
-    )
+    print_legend()
+    print("Матрица игры (в клетке: (A_ij, B_ij) и метка результата)")
+    print_colored_matrix(pairs, nash_strict, pareto_strong, row_labels, col_labels)
 
-    print("Краткий итог:")
-    print(f"  • Строгий Нэш: {positions_brief(nash_strict, pairs, row_labels, col_labels)}")
-    print(f"  • Парето: {positions_brief(pareto_strong, pairs, row_labels, col_labels)}")
-    print(f"  • Пересечение: {positions_brief(inter, pairs, row_labels, col_labels)}")
+    print("Краткая сводка:")
+    print(f"- Нэш (классический): {positions_to_text(nash_classic, pairs, row_labels, col_labels)}")
+    print(f"- Нэш (строгий, по семинару): {positions_to_text(nash_strict, pairs, row_labels, col_labels)}")
+    print(f"- Парето (сильный): {positions_to_text(pareto_strong, pairs, row_labels, col_labels)}")
+    if VERBOSE_OUTPUT:
+        print(f"- Парето (слабый): {positions_to_text(pareto_weak, pairs, row_labels, col_labels)}")
+    print(f"- Пересечение: {positions_to_text(inter, pairs, row_labels, col_labels)}")
 
     if inter:
-        print(f"  • Выбор по правилу семинара: {positions_brief(inter, pairs, row_labels, col_labels)}")
+        print(f"- Итоговый выбор: {positions_to_text(inter, pairs, row_labels, col_labels)}")
     else:
-        print(f"  • Выбор по правилу семинара: {positions_brief(nash_strict, pairs, row_labels, col_labels)}")
-
-    if nash_classic != nash_strict:
-        print(f"  • Классический Нэш (>=): {positions_brief(nash_classic, pairs, row_labels, col_labels)}")
-
-    if verbose:
-        print(f"  • Слабый Парето: {positions_brief(pareto_weak, pairs, row_labels, col_labels)}")
+        print(f"- Итоговый выбор: {positions_to_text(nash_strict, pairs, row_labels, col_labels)}")
     print()
 
-    print_mixed_analysis(a, b, pairs, row_labels, col_labels, verbose=verbose)
-
-
-# ============================================================================
-# Аргументы командной строки
-# ============================================================================
-def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(
-        description="Лабораторная работа: Нэш, Парето и смешанные стратегии в биматричных играх."
-    )
-    parser.add_argument(
-        "variant",
-        nargs="?",
-        type=int,
-        default=DEFAULT_VARIANT,
-        help=f"номер варианта из таблицы Л5.1 (по умолчанию {DEFAULT_VARIANT})",
-    )
-    parser.add_argument(
-        "--seed",
-        type=int,
-        default=DEFAULT_RANDOM_SEED,
-        help=f"seed для случайной игры 10x10 (по умолчанию {DEFAULT_RANDOM_SEED})",
-    )
-    parser.add_argument(
-        "--no-color",
-        action="store_true",
-        help="отключить цветной вывод",
-    )
-    parser.add_argument(
-        "--verbose",
-        action="store_true",
-        help="печатать дополнительные промежуточные вычисления",
-    )
-    args = parser.parse_args()
-
-    if args.variant not in VARIANTS:
-        parser.error("вариант должен быть целым числом от 1 до 18")
-
-    return args
+    print_mixed_analysis(a, b, pairs, row_labels, col_labels)
 
 
 # ============================================================================
 # Главная программа
 # ============================================================================
 def main() -> None:
-    args = parse_args()
-    use_color = not args.no_color
-
     print_separator("#")
-    print(colorize("ЛАБОРАТОРНАЯ РАБОТА №5: НЭШ, ПАРЕТО, СМЕШАННЫЕ СТРАТЕГИИ", Ansi.BOLD, use_color))
+    print("ЛАБОРАТОРНАЯ РАБОТА №5: НЭШ, ПАРЕТО, СМЕШАННЫЕ СТРАТЕГИИ")
     print_separator("#")
-    print(f"Вариант: {args.variant}")
-    print(f"Seed случайной игры 10x10: {args.seed}")
+    print(f"Вариант: 13")
+    print(f"Цветной вывод: {'включён' if USE_COLOR_OUTPUT else 'выключен'}")
+    print(f"Подробный вывод: {'включён' if VERBOSE_OUTPUT else 'выключен'}")
+    print(f"Seed случайной игры 10x10: {RANDOM_GAME_SEED}")
     print()
 
-    print(colorize("1. Проверка на классических играх", Ansi.BOLD, use_color))
-    print_separator("-")
-    for game_name, data in CLASSIC_GAMES.items():
-        analyze_game(
-            game_name,
-            data["pairs"],
-            row_labels=data["rows"],
-            col_labels=data["cols"],
-            extra_comment=data.get("comment"),
-            use_color=use_color,
-            verbose=args.verbose,
+    if SHOW_CLASSIC_GAMES:
+        print("ПРОВЕРКА АЛГОРИТМОВ НА ТРЁХ КЛАССИЧЕСКИХ ИГРАХ")
+        print_separator("-")
+        for game_name, data in CLASSIC_GAMES.items():
+            analyze_game(
+                game_name,
+                data["pairs"],
+                row_labels=data["rows"],
+                col_labels=data["cols"],
+                extra_comment=data.get("comment"),
+            )
+
+    if SHOW_RANDOM_GAME:
+        print("СЛУЧАЙНАЯ БИМАТРИЧНАЯ ИГРА 10x10")
+        print_separator("-")
+        random_pairs = generate_random_bimatrix(
+            rows=RANDOM_GAME_SIZE,
+            cols=RANDOM_GAME_SIZE,
+            low=RANDOM_GAME_LOW,
+            high=RANDOM_GAME_HIGH,
+            seed=RANDOM_GAME_SEED,
         )
+        analyze_game("Случайная игра 10x10", random_pairs)
 
-    print(colorize("2. Случайная биматричная игра 10x10", Ansi.BOLD, use_color))
-    print_separator("-")
-    random_pairs = generate_random_bimatrix(
-        rows=RANDOM_SIZE,
-        cols=RANDOM_SIZE,
-        low=RANDOM_LOW,
-        high=RANDOM_HIGH,
-        seed=args.seed,
-    )
-    analyze_game(
-        "Случайная игра 10x10",
-        random_pairs,
-        use_color=use_color,
-        verbose=False,
-    )
-
-    print(colorize("3. Вариант из таблицы Л5.1", Ansi.BOLD, use_color))
-    print_separator("-")
-    analyze_game(
-        f"Вариант {args.variant}",
-        VARIANTS[args.variant],
-        row_labels=["α1", "α2"],
-        col_labels=["β1", "β2"],
-        extra_comment="Для этой игры дополнительно ищутся равновесия в смешанном расширении.",
-        use_color=use_color,
-        verbose=True if args.verbose else False,
-    )
+    if SHOW_VARIANT_GAME:
+        print("ВАРИАНТ ИЗ ТАБЛИЦЫ Л5.1")
+        print_separator("-")
+        analyze_game(
+            f"Вариант {13}",
+            VARIANTS[13],
+            row_labels=["α1", "α2"],
+            col_labels=["β1", "β2"],
+            extra_comment="Для этой игры дополнительно ищем равновесные ситуации в смешанном расширении.",
+        )
 
 
 if __name__ == "__main__":
