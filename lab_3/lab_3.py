@@ -5,7 +5,7 @@ from typing import Dict, List, Optional, Sequence, Tuple
 
 Number = float
 Matrix = List[List[Number]]
-Position = Tuple[int, int]  # индексы с нуля
+Position = Tuple[int, int]
 
 RANDOM_GAME_SEED = 567
 RANDOM_GAME_SIZE = 10
@@ -16,9 +16,9 @@ RANDOM_GAME_HIGH = 50
 class Ansi:
     RESET = "\033[0m"
     BOLD = "\033[1m"
-    BLUE_BG = "\033[44;97m"  # Nash
-    GREEN_BG = "\033[42;30m"  # Pareto
-    MAGENTA_BG = "\033[45;97m"  # Nash ∩ Pareto
+    BLUE_BG = "\033[44;97m"
+    GREEN_BG = "\033[42;30m"
+    MAGENTA_BG = "\033[45;97m"
     CYAN = "\033[36m"
     YELLOW = "\033[33m"
 
