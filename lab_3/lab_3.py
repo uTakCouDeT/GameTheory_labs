@@ -484,10 +484,13 @@ def analyze_game(
     print_colored_matrix(pairs, nash_strict, pareto_strong, row_labels, col_labels)
 
     print("Краткая сводка:")
-    print(f"- Нэш (нестрогий, по лекции): {positions_to_text(nash_classic, pairs, row_labels, col_labels)}")
-    print(f"- Нэш (строгий, по семинару): {positions_to_text(nash_strict, pairs, row_labels, col_labels)}")
-    print(f"- Парето (сильный): {positions_to_text(pareto_strong, pairs, row_labels, col_labels)}")
-    print(f"- Парето (слабый): {positions_to_text(pareto_weak, pairs, row_labels, col_labels)}")
+    # print(f"- Нэш (нестрогий, по лекции): {positions_to_text(nash_classic, pairs, row_labels, col_labels)}")
+    # print(f"- Нэш (строгий, по семинару): {positions_to_text(nash_strict, pairs, row_labels, col_labels)}")
+    # print(f"- Парето (сильный): {positions_to_text(pareto_strong, pairs, row_labels, col_labels)}")
+    # print(f"- Парето (слабый): {positions_to_text(pareto_weak, pairs, row_labels, col_labels)}")
+
+    print(f"- Нэш: {positions_to_text(nash_strict, pairs, row_labels, col_labels)}")
+    print(f"- Парето: {positions_to_text(pareto_strong, pairs, row_labels, col_labels)}")
     print(f"- Пересечение: {positions_to_text(inter, pairs, row_labels, col_labels)}")
 
     if inter:
