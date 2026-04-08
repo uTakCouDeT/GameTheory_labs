@@ -22,6 +22,12 @@ class Ansi:
     CYAN = "\033[36m"
     YELLOW = "\033[33m"
 
+    # BLUE_BG = "\033[48;2;196;218;238m\033[38;2;28;48;80m"
+    # GREEN_BG = "\033[48;2;202;230;210m\033[38;2;26;70;44m"
+    # MAGENTA_BG = "\033[48;2;228;204;221m\033[38;2;84;36;68m"
+    # CYAN = "\033[38;2;70;120;140m"
+    # YELLOW = "\033[38;2;160;120;40m"
+
 
 def colorize(text: str, style: str) -> str:
     if not style:
