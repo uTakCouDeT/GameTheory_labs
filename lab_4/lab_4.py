@@ -132,7 +132,7 @@ class PositionalGame:
         return ",".join(str(x) for x in payoff)
 
     def _compact_levels_label(self) -> str:
-        return "0:P1   1:P2   2:P3   3:P1   4:P2   5:L"
+        return "Порядок ходов 1 → 2 → 3 → 1 → 2"
 
     def build_full_tree(self) -> None:
         self.nodes.clear()
