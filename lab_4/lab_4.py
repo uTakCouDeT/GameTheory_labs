@@ -18,8 +18,7 @@ RANDOM_SEED = 56578
 
 OUTPUT_DIR = "data"
 
-GRAPH_FORMAT = "svg"
-# GRAPH_FORMAT = "pdf"
+GRAPH_FORMAT = "png" # Можно "svg" или "pdf"
 GRAPH_ENGINE = "dot"
 
 SAVE_FULL_TREE = True
