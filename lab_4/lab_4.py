@@ -1,18 +1,12 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List, Optional, Tuple, Set
 import os
 import random
 
+from itertools import product
 from graphviz import Digraph
-
-
-# ============================================================
-# ЛР №4 (по методичке ЛР №6)
-# Позиционные игры. Метод обратной индукции.
-# Вариант 13
-# ============================================================
 
 VARIANT = 13
 TREE_DEPTH = 5
@@ -24,7 +18,8 @@ RANDOM_SEED = 56578
 
 OUTPUT_DIR = "data"
 
-GRAPH_FORMAT = "svg"   # можно заменить на "pdf"
+GRAPH_FORMAT = "svg"
+# GRAPH_FORMAT = "pdf"
 GRAPH_ENGINE = "dot"
 
 SAVE_FULL_TREE = True
@@ -32,15 +27,12 @@ SAVE_FULL_TREE_WITHOUT_LEAVES = True
 SAVE_STEP_GRAPHS = True
 SAVE_FINAL_GRAPH = True
 SAVE_SUMMARY_GRAPH = True
+SAVE_ALL_RATIONAL_GRAPH = True
 
 PRINT_TERMINAL_PAYOFFS = False
 PRINT_STEP_SUMMARY = True
 PRINT_DETAILED_STEP_INFO = False
 
-
-# ============================================================
-# Структуры
-# ============================================================
 
 @dataclass(frozen=True)
 class Candidate:
@@ -67,19 +59,15 @@ class Node:
         return f"v{self.id}"
 
 
-# ============================================================
-# Основной класс
-# ============================================================
-
 class PositionalGame:
     def __init__(
-        self,
-        depth: int,
-        num_players: int,
-        strategies_per_player: List[int],
-        payoff_min: int,
-        payoff_max: int,
-        seed: int,
+            self,
+            depth: int,
+            num_players: int,
+            strategies_per_player: List[int],
+            payoff_min: int,
+            payoff_max: int,
+            seed: int,
     ) -> None:
         self.depth = depth
         self.num_players = num_players
@@ -92,10 +80,6 @@ class PositionalGame:
         self.root_id: Optional[int] = None
         self._next_id = 1
         self.rng = random.Random(seed)
-
-    # --------------------------------------------------------
-    # Служебные функции
-    # --------------------------------------------------------
 
     def player_for_depth(self, depth: int) -> Optional[int]:
         if depth >= self.depth:
@@ -150,20 +134,16 @@ class PositionalGame:
     def _compact_levels_label(self) -> str:
         return "0:P1   1:P2   2:P3   3:P1   4:P2   5:L"
 
-    # --------------------------------------------------------
-    # Построение дерева
-    # --------------------------------------------------------
-
     def build_full_tree(self) -> None:
         self.nodes.clear()
         self._next_id = 1
         self.root_id = self._build_subtree(0, None, None)
 
     def _build_subtree(
-        self,
-        depth: int,
-        parent_id: Optional[int],
-        action_from_parent: Optional[str],
+            self,
+            depth: int,
+            parent_id: Optional[int],
+            action_from_parent: Optional[str],
     ) -> int:
         node_id = self._next_id
         self._next_id += 1
@@ -190,38 +170,38 @@ class PositionalGame:
 
         return node_id
 
-    # --------------------------------------------------------
-    # Обратная индукция
-    # --------------------------------------------------------
-
     def _resolve_node(self, node: Node) -> None:
         assert not node.is_leaf
         assert node.player is not None
 
         mover_idx = node.player - 1
-        all_candidates: List[Candidate] = []
 
+        child_candidate_lists: List[List[Candidate]] = []
         for child_id in node.children_ids:
             child = self.nodes[child_id]
-            for cand in child.resolved_candidates:
-                all_candidates.append(
-                    Candidate(
-                        payoff=cand.payoff,
-                        path=(node.id,) + cand.path,
-                    )
+
+            prefixed_candidates = [
+                Candidate(
+                    payoff=cand.payoff,
+                    path=(node.id,) + cand.path,
                 )
+                for cand in child.resolved_candidates
+            ]
+            child_candidate_lists.append(prefixed_candidates)
 
-        best_value = max(c.payoff[mover_idx] for c in all_candidates)
-        chosen = [c for c in all_candidates if c.payoff[mover_idx] == best_value]
+        result: Dict[Tuple[Tuple[int, ...], Tuple[int, ...]], Candidate] = {}
 
-        unique_map = {(c.payoff, c.path): c for c in chosen}
-        unique = list(unique_map.values())
+        for combo in product(*child_candidate_lists):
+            best_value = max(c.payoff[mover_idx] for c in combo)
+
+            for cand in combo:
+                if cand.payoff[mover_idx] == best_value:
+                    key = (cand.payoff, cand.path)
+                    result[key] = cand
+
+        unique = list(result.values())
         unique.sort(key=lambda c: (c.payoff, c.path))
         node.resolved_candidates = unique
-
-    # --------------------------------------------------------
-    # Печать
-    # --------------------------------------------------------
 
     def print_summary(self) -> None:
         print("=" * 100)
@@ -313,7 +293,7 @@ class PositionalGame:
             print(f"  {payoff}")
 
         print()
-        print(f"Количество оптимальных путей: {len(root.resolved_candidates)}")
+        print(f"Количество оптимальных исходов в корне: {len(root.resolved_candidates)}")
         print()
 
         for idx, cand in enumerate(root.resolved_candidates, start=1):
@@ -324,15 +304,45 @@ class PositionalGame:
                 print(f"    v{u} --{act}--> v{v}")
             print()
 
-    # --------------------------------------------------------
-    # Graphviz base
-    # --------------------------------------------------------
+    def collect_root_optimal_edges(self) -> Dict[Tuple[int, int], str]:
+        root = self.root()
+        final_paths = [cand.path for cand in root.resolved_candidates]
+
+        colors = [
+            "red", "blue", "green", "orange", "purple",
+            "brown", "magenta", "cyan", "darkgreen", "darkgoldenrod"
+        ]
+
+        edge_to_color: Dict[Tuple[int, int], str] = {}
+        for i, path in enumerate(final_paths):
+            color = colors[i % len(colors)]
+            for j in range(len(path) - 1):
+                edge_to_color[(path[j], path[j + 1])] = color
+        return edge_to_color
+
+    def collect_all_rational_edges(self) -> Set[Tuple[int, int]]:
+        edges: Set[Tuple[int, int]] = set()
+        for node in self.internal_nodes():
+            for cand in node.resolved_candidates:
+                path = cand.path
+                for i in range(len(path) - 1):
+                    edges.add((path[i], path[i + 1]))
+        return edges
+
+    def collect_all_rational_leaves(self) -> Set[int]:
+        leaves: Set[int] = set()
+        for node in self.internal_nodes():
+            for cand in node.resolved_candidates:
+                leaf_id = cand.path[-1]
+                if self.nodes[leaf_id].is_leaf:
+                    leaves.add(leaf_id)
+        return leaves
 
     def _make_graph(
-        self,
-        title: str,
-        compact_levels_note: bool = False,
-        a4_landscape: bool = True,
+            self,
+            title: str,
+            compact_levels_note: bool = False,
+            a4_landscape: bool = True,
     ) -> Digraph:
         g = Digraph(format=GRAPH_FORMAT, engine=GRAPH_ENGINE)
         attrs = {
@@ -378,16 +388,13 @@ class PositionalGame:
     def _node_label_value(self, node: Node) -> str:
         if node.is_leaf:
             return self._compact_payoff_label(node.terminal_payoff)
+
         vals = self.unique_payoffs_at_node(node)
         if len(vals) == 1:
             return self._compact_payoff_label(vals[0])
         if len(vals) > 1:
-            return f"{len(vals)} исх."
+            return " | ".join(self._compact_payoff_label(v) for v in vals)
         return ""
-
-    # --------------------------------------------------------
-    # Полное дерево с листьями
-    # --------------------------------------------------------
 
     def render_full_tree_compact(self, filename_no_ext: str) -> None:
         g = self._make_graph("Полное дерево игры", compact_levels_note=True)
@@ -425,10 +432,6 @@ class PositionalGame:
 
         g.render(os.path.join(OUTPUT_DIR, filename_no_ext), cleanup=True)
 
-    # --------------------------------------------------------
-    # Полное дерево без листьев
-    # --------------------------------------------------------
-
     def render_full_tree_without_leaves(self, filename_no_ext: str) -> None:
         g = self._make_graph("Полное дерево без терминальных вершин", compact_levels_note=True)
 
@@ -454,10 +457,6 @@ class PositionalGame:
                 g.edge(node.name(), child.name(), label=child.action_from_parent or "", color="#6B7280")
 
         g.render(os.path.join(OUTPUT_DIR, filename_no_ext), cleanup=True)
-
-    # --------------------------------------------------------
-    # Граф шага индукции
-    # --------------------------------------------------------
 
     def render_local_step_graph(self, current_depth: int, filename_no_ext: str) -> None:
         title = f"Уровень {current_depth} — ходит игрок {self.player_for_depth(current_depth)}"
@@ -506,29 +505,14 @@ class PositionalGame:
 
         g.render(os.path.join(OUTPUT_DIR, filename_no_ext), cleanup=True)
 
-    # --------------------------------------------------------
-    # Финальный граф оптимальных путей
-    # --------------------------------------------------------
-
     def render_final_graph(self, filename_no_ext: str) -> None:
-        g = self._make_step_graph("Финальное дерево. Все оптимальные пути")
+        g = self._make_step_graph("Финальное дерево. Исходы, сохранившиеся в корне")
 
-        root = self.root()
-        final_paths = [cand.path for cand in root.resolved_candidates]
-
-        colors = [
-            "red", "blue", "green", "orange", "purple",
-            "brown", "magenta", "cyan", "darkgreen", "darkgoldenrod"
-        ]
-
-        node_ids = set()
-        edge_to_color = {}
-
-        for i, path in enumerate(final_paths):
-            color = colors[i % len(colors)]
-            node_ids.update(path)
-            for j in range(len(path) - 1):
-                edge_to_color[(path[j], path[j + 1])] = color
+        edge_to_color = self.collect_root_optimal_edges()
+        node_ids: Set[int] = set()
+        for (u, v) in edge_to_color.keys():
+            node_ids.add(u)
+            node_ids.add(v)
 
         for nid in sorted(node_ids):
             node = self.nodes[nid]
@@ -564,89 +548,115 @@ class PositionalGame:
 
         g.render(os.path.join(OUTPUT_DIR, filename_no_ext), cleanup=True)
 
-    # --------------------------------------------------------
-    # НОВЫЙ СВОДНЫЙ ГРАФ:
-    # вся внутренняя структура дерева + значения в узлах +
-    # цветные оптимальные пути как в final graph
-    # --------------------------------------------------------
-
-    def render_summary_value_graph(self, filename_no_ext: str) -> None:
+    def render_all_rational_graph(self, filename_no_ext: str) -> None:
         g = self._make_graph(
-            "Сводный граф дерева со значениями и оптимальными путями",
+            "Все локально рациональные продолжения подыгр",
             compact_levels_note=True,
             a4_landscape=True,
         )
 
-        root = self.root()
-        final_paths = [cand.path for cand in root.resolved_candidates]
+        all_rational_edges = self.collect_all_rational_edges()
+        root_optimal_edges = self.collect_root_optimal_edges()
+        rational_leaves = self.collect_all_rational_leaves()
 
-        colors = [
-            "red", "blue", "green", "orange", "purple",
-            "brown", "magenta", "cyan", "darkgreen", "darkgoldenrod"
-        ]
-
-        edge_to_color: Dict[Tuple[int, int], str] = {}
-        for i, path in enumerate(final_paths):
-            color = colors[i % len(colors)]
-            for j in range(len(path) - 1):
-                edge_to_color[(path[j], path[j + 1])] = color
-
-        # Показываем:
-        # - все внутренние узлы с вычисленными значениями;
-        # - листья только те, которые входят в оптимальные пути.
-        leaf_ids_on_optimal_paths = {
-            path[-1] for path in final_paths if self.nodes[path[-1]].is_leaf
-        }
-
-        # Внутренние узлы
         for node in self.internal_nodes():
-            vals = self.unique_payoffs_at_node(node)
-
-            if len(vals) == 1:
-                label = self._compact_payoff_label(vals[0])
-            elif len(vals) > 1:
-                label = " | ".join(self._compact_payoff_label(v) for v in vals)
-            else:
-                label = ""
-
             g.node(
                 node.name(),
-                label=label,
+                label=self._node_label_value(node),
                 shape="circle",
                 style="filled",
-                fillcolor="#D1FAE5" if node.depth == 0 else "#EEF2FF",
+                fillcolor="#EEF2FF" if node.id != self.root_id else "#D1FAE5",
                 penwidth="2" if node.id == self.root_id else "1",
-                width="0.72",
+                width="0.78",
             )
 
-        # Листья только с оптимальных путей
-        for leaf_id in sorted(leaf_ids_on_optimal_paths):
+        for leaf_id in sorted(rational_leaves):
             leaf = self.nodes[leaf_id]
             g.node(
                 leaf.name(),
-                label=self._compact_payoff_label(leaf.terminal_payoff),
+                label=self._node_label_value(leaf),
+                shape="box",
+                style="filled",
+                fillcolor="#FDE68A",
+                penwidth="1",
+            )
+
+        for node in self.internal_nodes():
+            for child_id in node.children_ids:
+                child = self.nodes[child_id]
+                edge = (node.id, child_id)
+
+                if child.is_leaf and child_id not in rational_leaves:
+                    continue
+
+                if edge not in all_rational_edges and edge not in root_optimal_edges:
+                    continue
+
+                if edge in root_optimal_edges:
+                    color = root_optimal_edges[edge]
+                    penwidth = "3"
+                    style = "solid"
+                else:
+                    color = "#1F4E79"
+                    penwidth = "1.5"
+                    style = "dashed"
+
+                g.edge(
+                    node.name(),
+                    child.name(),
+                    label=child.action_from_parent or "",
+                    color=color,
+                    penwidth=penwidth,
+                    style=style,
+                )
+
+        g.render(os.path.join(OUTPUT_DIR, filename_no_ext), cleanup=True)
+
+    def render_summary_value_graph(self, filename_no_ext: str) -> None:
+        g = self._make_graph(
+            "Сводный граф дерева со значениями и исходами в корне",
+            compact_levels_note=True,
+            a4_landscape=True,
+        )
+
+        root_optimal_edges = self.collect_root_optimal_edges()
+        root_optimal_leaves = {v for (_, v) in root_optimal_edges if self.nodes[v].is_leaf}
+
+        for node in self.internal_nodes():
+            g.node(
+                node.name(),
+                label=self._node_label_value(node),
+                shape="circle",
+                style="filled",
+                fillcolor="#D1FAE5" if node.id == self.root_id else "#EEF2FF",
+                penwidth="2" if node.id == self.root_id else "1",
+                width="0.78",
+            )
+
+        for leaf_id in sorted(root_optimal_leaves):
+            leaf = self.nodes[leaf_id]
+            g.node(
+                leaf.name(),
+                label=self._node_label_value(leaf),
                 shape="box",
                 style="filled",
                 fillcolor="#FDE68A",
                 penwidth="2",
             )
 
-        # Рёбра:
-        # - между всеми внутренними узлами;
-        # - к листьям только если лист на оптимальном пути.
         for node in self.internal_nodes():
             for child_id in node.children_ids:
                 child = self.nodes[child_id]
 
-                if child.is_leaf and child_id not in leaf_ids_on_optimal_paths:
+                if child.is_leaf and child_id not in root_optimal_leaves:
                     continue
 
                 edge = (node.id, child_id)
-                if edge in edge_to_color:
-                    color = edge_to_color[edge]
+                if edge in root_optimal_edges:
+                    color = root_optimal_edges[edge]
                     penwidth = "3"
                 else:
-                    color = "#9CA3AF"
+                    color = "#B0B7C3"
                     penwidth = "1"
 
                 g.edge(
@@ -659,10 +669,6 @@ class PositionalGame:
 
         g.render(os.path.join(OUTPUT_DIR, filename_no_ext), cleanup=True)
 
-
-# ============================================================
-# main
-# ============================================================
 
 def ensure_output_dir(path: str) -> None:
     os.makedirs(path, exist_ok=True)
@@ -680,23 +686,19 @@ def main() -> None:
         seed=RANDOM_SEED,
     )
 
-    # 1. Строим дерево
     game.build_full_tree()
 
-    # 2. Структурные графы
     if SAVE_FULL_TREE:
         game.render_full_tree_compact("full_tree_compact")
 
     if SAVE_FULL_TREE_WITHOUT_LEAVES:
         game.render_full_tree_without_leaves("full_tree_without_leaves")
 
-    # 3. Консольная сводка
     game.print_summary()
 
     if PRINT_TERMINAL_PAYOFFS:
         game.print_terminal_payoffs()
 
-    # 4. Обратная индукция и графы шагов
     for current_depth in range(game.depth - 1, -1, -1):
         for node in game.nodes_at_depth(current_depth):
             game._resolve_node(node)
@@ -713,7 +715,6 @@ def main() -> None:
                 filename_no_ext=f"step_{game.depth - current_depth:02d}_after_depth_{current_depth}",
             )
 
-    # 5. Итог
     game.print_final_solutions()
 
     if SAVE_FINAL_GRAPH:
@@ -721,6 +722,9 @@ def main() -> None:
 
     if SAVE_SUMMARY_GRAPH:
         game.render_summary_value_graph("summary_value_graph")
+
+    if SAVE_ALL_RATIONAL_GRAPH:
+        game.render_all_rational_graph("all_rational_continuations_graph")
 
     print("=" * 100)
     print(f"Все изображения сохранены в папку: {OUTPUT_DIR}")
@@ -735,6 +739,7 @@ def main() -> None:
     print("  step_05_after_depth_0")
     print("  step_final_optimal_paths")
     print("  summary_value_graph")
+    print("  all_rational_continuations_graph")
     print("=" * 100)
 
 
