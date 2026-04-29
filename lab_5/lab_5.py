@@ -307,7 +307,7 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description="Лабораторная работа № 5: проверка кооперативной игры и расчет вектора Шепли."
     )
-    parser.add_argument("--variant", "-v", type=int, default=1, help="номер варианта из таблицы Л7.1")
+    parser.add_argument("--variant", "-v", type=int, default=13, help="номер варианта из таблицы Л7.1")
     parser.add_argument("--all", action="store_true", help="решить все варианты из таблицы Л7.1")
     parser.add_argument(
         "--verbose-inequalities",
