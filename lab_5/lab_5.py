@@ -1,7 +1,3 @@
-# Лабораторная работа № 5 по теории игр
-# Рациональный дележ в кооперативных играх. Вектор Шепли.
-# Код не требует внешних библиотек: используются только стандартные модули Python.
-
 from __future__ import annotations
 
 import argparse
@@ -15,10 +11,6 @@ CharacteristicFunction = Dict[Coalition, Fraction]
 
 PLAYERS: Tuple[int, ...] = (1, 2, 3, 4)
 
-# Порядок столбцов соответствует таблице Л7.1:
-# v(∅), v({1}), v({2}), v({3}), v({4}),
-# v({1,2}), v({1,3}), v({1,4}), v({2,3}), v({2,4}), v({3,4}),
-# v({1,2,3}), v({1,2,4}), v({1,3,4}), v({2,3,4}), v(I)
 COALITION_ORDER: Tuple[Tuple[int, ...], ...] = (
     (),
     (1,), (2,), (3,), (4,),
@@ -90,11 +82,9 @@ def print_characteristic_function(v: CharacteristicFunction) -> None:
 
 
 def check_superadditivity(v: CharacteristicFunction, players: Tuple[int, ...] = PLAYERS):
-    """Проверка v(S∪T) >= v(S) + v(T) для непересекающихся S и T."""
     coalitions = all_coalitions(players)
     checks = []
     violations = []
-    # Достаточно проверять неупорядоченные пары: свойство симметрично по S и T.
     for idx_s, s in enumerate(coalitions):
         if not s:
             continue
@@ -116,7 +106,6 @@ def check_convexity(v: CharacteristicFunction, players: Tuple[int, ...] = PLAYER
     coalitions = all_coalitions(players)
     checks = []
     violations = []
-    # Проверяем неупорядоченные пары, так как левая и правая части симметричны.
     for idx_s, s in enumerate(coalitions):
         for t in coalitions[idx_s:]:
             left = v[s | t] + v[s & t]
