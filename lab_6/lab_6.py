@@ -1,41 +1,3 @@
-"""
-Лабораторная работа № 6.
-Информационное противоборство в социальных сетях.
-
-Скрипт реализует задание из методички:
-1) для 10 агентов генерируется стохастическая матрица доверия A;
-2) генерируется начальный вектор мнений без управления и находится итоговое мнение;
-3) случайно выбираются непересекающиеся агенты влияния двух игроков;
-4) агентам влияния назначаются управления игроков, нейтральным агентам - случайные мнения;
-5) моделируется информационное управление и выводится итоговое мнение агентов.
-
-Закон изменения мнений:
-    x(t) = A x(t - 1).
-
-При положительной стохастической матрице доверия строки A^k сходятся к одинаковой строке r,
-поэтому итоговое мнение всех агентов стремится к одному числу:
-    X = r * x(0).
-
-Что выводит программа:
-
-1. Сгенерированную матрицу доверия A.
-2. Проверку стохастичности:
-   - неотрицательность элементов;
-   - суммы строк;
-   - итоговый логический результат проверки.
-3. Начальный вектор мнений без управления.
-4. Таблицу сходимости по итерациям.
-5. Итоговое мнение агентов без управления.
-6. Предельную строку r матрицы A^k и проверку X = r * x(0).
-7. Номера агентов влияния первого и второго игроков.
-8. Управления первого и второго игроков.
-9. Начальные мнения нейтральных агентов.
-10. Начальный вектор с учетом информационного управления.
-11. Таблицу сходимости для игры с управлением.
-12. Итоговое мнение агентов и интерпретацию победителя.
-
-"""
-
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -43,20 +5,17 @@ from typing import Iterable
 
 import numpy as np
 
-# -----------------------------
-# Настройки лабораторной работы
-# -----------------------------
 N_AGENTS = 10
-SEED = 2026  # поменяйте seed, если нужен другой случайный вариант
-EPS = 1e-6  # точность остановки итераций
+SEED = 2026
+EPS = 1e-6
 MAX_ITER = 10_000
 
-INITIAL_LOW = 1  # диапазон мнений без управления и для нейтральных агентов
+INITIAL_LOW = 1
 INITIAL_HIGH = 20
 
-PLAYER_1_LOW = 0  # диапазон управления первого игрока
+PLAYER_1_LOW = 0
 PLAYER_1_HIGH = 100
-PLAYER_2_LOW = -100  # диапазон управления второго игрока
+PLAYER_2_LOW = -100
 PLAYER_2_HIGH = 0
 
 
@@ -71,17 +30,14 @@ class SimulationResult:
 
 @dataclass(frozen=True)
 class InfluenceScenario:
-    player_1_agents: list[int]  # индексы в Python: 0..n-1
+    player_1_agents: list[int]
     player_2_agents: list[int]
     neutral_agents: list[int]
-    u: int  # управление первого игрока
-    v: int  # управление второго игрока
+    u: int
+    v: int
     x0: np.ndarray
 
 
-# -----------------------------
-# Служебные функции вывода
-# -----------------------------
 def fmt_vector(values: Iterable[float], digits: int = 3) -> str:
     return "(" + "; ".join(f"{x:.{digits}f}" for x in values) + ")"
 
@@ -98,28 +54,14 @@ def print_matrix(name: str, matrix: np.ndarray, digits: int = 3) -> None:
 
 
 def to_agent_numbers(indices: Iterable[int]) -> list[int]:
-    """Перевод индексов Python 0..n-1 в номера агентов 1..n для отчета."""
     return [i + 1 for i in indices]
 
-
-# -----------------------------
-# Генерация исходных данных
-# -----------------------------
 def generate_trust_matrix(n: int, rng: np.random.Generator) -> np.ndarray:
-    """
-    Генерация положительной стохастической по строкам матрицы доверия.
-
-    Элемент a_ij >= 0 показывает степень доверия i-го агента j-му агенту.
-    Сумма элементов каждой строки равна 1.
-    Малое положительное слагаемое гарантирует положительность всех элементов,
-    что обеспечивает сходимость мнений к общему итоговому мнению.
-    """
     raw = rng.random((n, n)) + 1e-3
     return raw / raw.sum(axis=1, keepdims=True)
 
 
 def generate_initial_opinions(n: int, rng: np.random.Generator) -> np.ndarray:
-    """Случайный начальный вектор мнений агентов из заданного отрезка."""
     return rng.integers(INITIAL_LOW, INITIAL_HIGH + 1, size=n).astype(float)
 
 
@@ -128,14 +70,6 @@ def choose_influence_scenario(
         rng: np.random.Generator,
         base_x0: np.ndarray,
 ) -> InfluenceScenario:
-    """
-    Случайный выбор непересекающихся агентов влияния двух игроков.
-
-    Важно: начальный вектор не генерируется заново.
-    Берется копия базового x(0), который уже использовался
-    в моделировании без управления.
-    Затем в этой копии заменяются мнения агентов влияния.
-    """
     max_count = max(1, n // 3)
     count_1 = int(rng.integers(1, max_count + 1))
     count_2 = int(rng.integers(1, max_count + 1))
@@ -149,11 +83,8 @@ def choose_influence_scenario(
     u = int(rng.integers(PLAYER_1_LOW, PLAYER_1_HIGH + 1))
     v = int(rng.integers(PLAYER_2_LOW, PLAYER_2_HIGH + 1))
 
-    # Главное исправление:
-    # используем тот же начальный вектор, что и в первом моделировании
     x0 = base_x0.astype(float).copy()
 
-    # Добавляем информационное управление
     x0[player_1_agents] = u
     x0[player_2_agents] = v
 
@@ -167,9 +98,6 @@ def choose_influence_scenario(
     )
 
 
-# -----------------------------
-# Проверки и моделирование
-# -----------------------------
 def is_row_stochastic(A: np.ndarray, tol: float = 1e-10) -> bool:
     non_negative = np.all(A >= -tol)
     row_sums_are_one = np.allclose(A.sum(axis=1), 1.0, atol=tol)
@@ -177,14 +105,6 @@ def is_row_stochastic(A: np.ndarray, tol: float = 1e-10) -> bool:
 
 
 def simulate_opinions(A: np.ndarray, x0: np.ndarray, eps: float, max_iter: int) -> SimulationResult:
-    """
-    Итерационное моделирование x(t) = A x(t-1).
-
-    Остановка выполняется, когда максимальное изменение компонент вектора мнений
-    между двумя соседними итерациями становится меньше eps.
-    Для отчета сохраняется таблица сходимости:
-        t, max|x(t)-x(t-1)|, min x(t), max x(t), разброс max-min.
-    """
     x_prev = x0.astype(float).copy()
     convergence_rows: list[tuple[int, float, float, float, float]] = []
 
@@ -210,12 +130,6 @@ def simulate_opinions(A: np.ndarray, x0: np.ndarray, eps: float, max_iter: int) 
 
 
 def stationary_row(A: np.ndarray, eps: float, max_iter: int) -> tuple[np.ndarray, int, float]:
-    """
-    Вычисление предельной строки r матрицы A^k.
-
-    Для положительной стохастической матрицы доверия все строки A^k стремятся
-    к одной строке r. Тогда итоговое мнение можно проверить по формуле r @ x0.
-    """
     n = A.shape[0]
     r_prev = np.full(n, 1.0 / n)
 
@@ -230,13 +144,6 @@ def stationary_row(A: np.ndarray, eps: float, max_iter: int) -> tuple[np.ndarray
 
 
 def limiting_matrix_power(A: np.ndarray, eps: float, max_iter: int) -> tuple[np.ndarray, int, float]:
-    """
-    Вычисление предельной матрицы A^k.
-
-    Для положительной стохастической матрицы доверия степени A^k
-    сходятся к матрице, у которой все строки почти одинаковы.
-    Эта общая строка совпадает с предельной строкой r.
-    """
     n = A.shape[0]
     A_prev = np.eye(n)
 
@@ -278,9 +185,6 @@ def interpret_winner(final_value: float, player_1_target: float, player_2_target
     )
 
 
-# -----------------------------
-# Основной сценарий
-# -----------------------------
 def main() -> None:
     rng = np.random.default_rng(SEED)
 
@@ -292,7 +196,6 @@ def main() -> None:
     print(f"Точность остановки eps: {EPS:g}")
     print("=" * 80)
 
-    # 1. Генерация матрицы доверия
     A = generate_trust_matrix(N_AGENTS, rng)
     print("1. Сгенерированная матрица доверия")
     print_matrix("A", A, digits=3)
@@ -302,7 +205,6 @@ def main() -> None:
     print(f"  матрица стохастическая по строкам: {is_row_stochastic(A)}")
     print("=" * 80)
 
-    # 2. Моделирование без информационного управления
     x0_plain = generate_initial_opinions(N_AGENTS, rng)
     plain_result = simulate_opinions(A, x0_plain, EPS, MAX_ITER)
     r, r_iters, r_delta = stationary_row(A, EPS, MAX_ITER)
@@ -322,7 +224,6 @@ def main() -> None:
     print(f"Проверка по формуле X = r * x(0): {theoretical_plain:.6f}")
     print("=" * 80)
 
-    # 3. Моделирование информационного противоборства
     scenario = choose_influence_scenario(N_AGENTS, rng, x0_plain)
     influence_result = simulate_opinions(A, scenario.x0, EPS, MAX_ITER)
     theoretical_influence = float(r @ scenario.x0)
@@ -349,7 +250,6 @@ def main() -> None:
 
 
 def print_convergence_table(rows: list[tuple[int, float, float, float, float]]) -> None:
-    """Печать таблицы сходимости, удобной для вставки в отчет."""
     print("Таблица сходимости:")
     print("  t | max|x(t)-x(t-1)| | min x(t) | max x(t) | разброс")
     print("----+-------------------+----------+----------+---------")
