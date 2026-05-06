@@ -16,7 +16,6 @@
 поэтому итоговое мнение всех агентов стремится к одному числу:
     X = r * x(0).
 
-
 Что выводит программа:
 
 1. Сгенерированную матрицу доверия A.
@@ -44,21 +43,20 @@ from typing import Iterable
 
 import numpy as np
 
-
 # -----------------------------
 # Настройки лабораторной работы
 # -----------------------------
 N_AGENTS = 10
-SEED = 2026              # поменяйте seed, если нужен другой случайный вариант
-EPS = 1e-6               # точность остановки итераций
+SEED = 2026  # поменяйте seed, если нужен другой случайный вариант
+EPS = 1e-6  # точность остановки итераций
 MAX_ITER = 10_000
 
-INITIAL_LOW = 1          # диапазон мнений без управления и для нейтральных агентов
+INITIAL_LOW = 1  # диапазон мнений без управления и для нейтральных агентов
 INITIAL_HIGH = 20
 
-PLAYER_1_LOW = 0         # диапазон управления первого игрока
+PLAYER_1_LOW = 0  # диапазон управления первого игрока
 PLAYER_1_HIGH = 100
-PLAYER_2_LOW = -100      # диапазон управления второго игрока
+PLAYER_2_LOW = -100  # диапазон управления второго игрока
 PLAYER_2_HIGH = 0
 
 
@@ -73,11 +71,11 @@ class SimulationResult:
 
 @dataclass(frozen=True)
 class InfluenceScenario:
-    player_1_agents: list[int]   # индексы в Python: 0..n-1
+    player_1_agents: list[int]  # индексы в Python: 0..n-1
     player_2_agents: list[int]
     neutral_agents: list[int]
-    u: int                       # управление первого игрока
-    v: int                       # управление второго игрока
+    u: int  # управление первого игрока
+    v: int  # управление второго игрока
     x0: np.ndarray
 
 
@@ -125,13 +123,18 @@ def generate_initial_opinions(n: int, rng: np.random.Generator) -> np.ndarray:
     return rng.integers(INITIAL_LOW, INITIAL_HIGH + 1, size=n).astype(float)
 
 
-def choose_influence_scenario(n: int, rng: np.random.Generator) -> InfluenceScenario:
+def choose_influence_scenario(
+        n: int,
+        rng: np.random.Generator,
+        base_x0: np.ndarray,
+) -> InfluenceScenario:
     """
     Случайный выбор непересекающихся агентов влияния двух игроков.
 
-    В работе требуется, чтобы агенты первого и второго игроков не пересекались.
-    Количество агентов каждого игрока выбирается случайно от 1 до n//3,
-    поэтому нейтральные агенты остаются почти всегда, а при n=10 - гарантированно.
+    Важно: начальный вектор не генерируется заново.
+    Берется копия базового x(0), который уже использовался
+    в моделировании без управления.
+    Затем в этой копии заменяются мнения агентов влияния.
     """
     max_count = max(1, n // 3)
     count_1 = int(rng.integers(1, max_count + 1))
@@ -146,7 +149,11 @@ def choose_influence_scenario(n: int, rng: np.random.Generator) -> InfluenceScen
     u = int(rng.integers(PLAYER_1_LOW, PLAYER_1_HIGH + 1))
     v = int(rng.integers(PLAYER_2_LOW, PLAYER_2_HIGH + 1))
 
-    x0 = generate_initial_opinions(n, rng)
+    # Главное исправление:
+    # используем тот же начальный вектор, что и в первом моделировании
+    x0 = base_x0.astype(float).copy()
+
+    # Добавляем информационное управление
     x0[player_1_agents] = u
     x0[player_2_agents] = v
 
@@ -222,16 +229,53 @@ def stationary_row(A: np.ndarray, eps: float, max_iter: int) -> tuple[np.ndarray
     raise RuntimeError("Предельная строка матрицы доверия не была найдена за max_iter итераций.")
 
 
-def interpret_winner(final_value: float) -> str:
+def limiting_matrix_power(A: np.ndarray, eps: float, max_iter: int) -> tuple[np.ndarray, int, float]:
     """
-    Простая интерпретация результата для выбранных диапазонов управления:
-    первый игрок тянет мнение в положительную сторону, второй - в отрицательную.
+    Вычисление предельной матрицы A^k.
+
+    Для положительной стохастической матрицы доверия степени A^k
+    сходятся к матрице, у которой все строки почти одинаковы.
+    Эта общая строка совпадает с предельной строкой r.
     """
-    if final_value > 0:
-        return "выиграл первый игрок"
-    if final_value < 0:
-        return "выиграл второй игрок"
-    return "итоговое мнение равно 0: преимущества нет ни у одного игрока"
+    n = A.shape[0]
+    A_prev = np.eye(n)
+
+    for k in range(1, max_iter + 1):
+        A_next = A_prev @ A
+        delta = float(np.max(np.abs(A_next - A_prev)))
+
+        if k > 1 and delta < eps:
+            return A_next, k, delta
+
+        A_prev = A_next
+
+    raise RuntimeError(
+        f"Матрица A^k не сошлась за {max_iter} итераций. Последняя delta = {delta}"
+    )
+
+
+def interpret_winner(final_value: float, player_1_target: float, player_2_target: float) -> str:
+    distance_to_player_1 = abs(final_value - player_1_target)
+    distance_to_player_2 = abs(final_value - player_2_target)
+
+    if distance_to_player_1 < distance_to_player_2:
+        return (
+            "выиграл первый игрок\n"
+            f"расстояние до цели первого игрока = {distance_to_player_1:.6f}\n"
+            f"расстояние до цели второго игрока = {distance_to_player_2:.6f}\n"
+        )
+
+    if distance_to_player_2 < distance_to_player_1:
+        return (
+            "выиграл второй игрок\n"
+            f"расстояние до цели первого игрока = {distance_to_player_1:.6f}\n"
+            f"расстояние до цели второго игрока = {distance_to_player_2:.6f}\n"
+        )
+
+    return (
+        "ничья: итоговое мнение равноудалено от целей игроков "
+        f"(расстояние = {distance_to_player_1:.6f})"
+    )
 
 
 # -----------------------------
@@ -262,6 +306,7 @@ def main() -> None:
     x0_plain = generate_initial_opinions(N_AGENTS, rng)
     plain_result = simulate_opinions(A, x0_plain, EPS, MAX_ITER)
     r, r_iters, r_delta = stationary_row(A, EPS, MAX_ITER)
+    A_limit, A_limit_iters, A_limit_delta = limiting_matrix_power(A, EPS, MAX_ITER)
     theoretical_plain = float(r @ x0_plain)
 
     print("2. Моделирование без информационного управления")
@@ -271,11 +316,14 @@ def main() -> None:
     print(f"Число итераций до сходимости: {plain_result.iterations}")
     print(f"Последнее max|x(t)-x(t-1)|: {plain_result.last_delta:.8f}")
     print(f"Предельная строка r матрицы A^k: {fmt_vector(r, digits=6)}")
+    print(f"Полная матрица A^k при k = {A_limit_iters}:")
+    print_matrix(f"A^{A_limit_iters}", A_limit, digits=6)
+    print(f"Последнее max|A^k - A^(k-1)|: {A_limit_delta:.8f}")
     print(f"Проверка по формуле X = r * x(0): {theoretical_plain:.6f}")
     print("=" * 80)
 
     # 3. Моделирование информационного противоборства
-    scenario = choose_influence_scenario(N_AGENTS, rng)
+    scenario = choose_influence_scenario(N_AGENTS, rng, x0_plain)
     influence_result = simulate_opinions(A, scenario.x0, EPS, MAX_ITER)
     theoretical_influence = float(r @ scenario.x0)
     final_value = float(np.mean(influence_result.final_x))
@@ -295,7 +343,8 @@ def main() -> None:
     print(f"Число итераций до сходимости: {influence_result.iterations}")
     print(f"Последнее max|x(t)-x(t-1)|: {influence_result.last_delta:.8f}")
     print(f"Проверка по формуле X = r * x(0): {theoretical_influence:.6f}")
-    print(f"Итоговое мнение: {final_value:.6f}; {interpret_winner(final_value)}.")
+    print(f"Итоговое мнение: {final_value:.6f};")
+    print(f"{interpret_winner(final_value, scenario.u, scenario.v)}.")
     print("=" * 80)
 
 
