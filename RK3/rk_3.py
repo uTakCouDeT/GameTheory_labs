@@ -49,12 +49,12 @@ MANUAL_S_AGENTS: list[int] | None = None
 
 @dataclass(frozen=True)
 class VariantParameters:
-    gf: float
-    gs: float
     a: float
     b: float
     c: float
     d: float
+    gf: float
+    gs: float
 
 
 # Таблица 8.1 из методички: g_f, g_s, a, b, c, d.
@@ -346,12 +346,12 @@ def print_convergence_table(rows: list[tuple[int, float, float, float, float]]) 
 def print_variant_parameters(variant: int, p: VariantParameters) -> None:
     print(f"Вариант: {variant}")
     print("Параметры варианта из таблицы 8.1:")
-    print(f"  g_f = {fmt_float(p.gf, 6)}")
-    print(f"  g_s = {fmt_float(p.gs, 6)}")
     print(f"  a   = {fmt_float(p.a, 6)}")
     print(f"  b   = {fmt_float(p.b, 6)}")
     print(f"  c   = {fmt_float(p.c, 6)}")
     print(f"  d   = {fmt_float(p.d, 6)}")
+    print(f"  g_f = {fmt_float(p.gf, 6)}")
+    print(f"  g_s = {fmt_float(p.gs, 6)}")
     print()
 
 
