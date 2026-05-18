@@ -12,19 +12,11 @@ import networkx as nx
 
 Vertex = Hashable
 
-
-# -----------------------------------------------------------------------------
-# Форматирование результата
-# -----------------------------------------------------------------------------
-
-
 def fmt_fraction(fr: Fraction) -> str:
-    """Печатает Fraction как целое число или как дробь a/b."""
     return str(fr.numerator) if fr.denominator == 1 else f"{fr.numerator}/{fr.denominator}"
 
 
 def format_producer(coeffs: Mapping[int, int], var: str = "x", phi_name: str = "φ") -> str:
-    """Форматирует производящую функцию φ(x)."""
     if not coeffs:
         return f"{phi_name}({var}) = 0"
 
@@ -50,7 +42,6 @@ def format_producer(coeffs: Mapping[int, int], var: str = "x", phi_name: str = "
 
 
 def format_myerson(terms: Mapping[int, Fraction], vertex: Vertex, var: str = "r") -> str:
-    """Форматирует компоненту вектора Майерсона Y_i(v,g)."""
     if not terms:
         return f"Y_{vertex}(v,g) = 0"
 
@@ -63,15 +54,8 @@ def format_myerson(terms: Mapping[int, Fraction], vertex: Vertex, var: str = "r"
     return f"Y_{vertex}(v,g) = " + " + ".join(pieces)
 
 
-# -----------------------------------------------------------------------------
-# Граф и расчеты
-# -----------------------------------------------------------------------------
-
-
 @dataclass(frozen=True)
 class UndirectedGraph:
-    """Простой неориентированный граф без петель."""
-
     edges: Tuple[Tuple[Vertex, Vertex], ...]
 
     def __post_init__(self) -> None:
@@ -101,7 +85,6 @@ class UndirectedGraph:
         return dict(adj)
 
     def is_tree(self) -> bool:
-        """Проверяет, является ли граф деревом."""
         vertices = self.vertices
         if not vertices:
             return True
@@ -123,12 +106,6 @@ class UndirectedGraph:
         return len(visited) == len(vertices)
 
     def simple_paths_containing(self, target: Vertex) -> Dict[int, List[Tuple[Vertex, ...]]]:
-        """
-        Перечисляет все простые пути, содержащие target.
-
-        Ключ словаря — число вершин в пути.
-        Путь и обратный ему считаются одним и тем же путем.
-        """
         if target not in self.vertices:
             raise ValueError(f"Вершины {target!r} нет в графе")
 
@@ -161,23 +138,10 @@ class UndirectedGraph:
         }
 
     def producer_coefficients(self, target: Vertex) -> Dict[int, int]:
-        """
-        Возвращает коэффициенты производящей функции φ_target(x).
-
-        Результат: {m: a_m}, где a_m — число простых путей из m вершин,
-        содержащих target.
-        """
         grouped = self.simple_paths_containing(target)
         return {m: len(paths) for m, paths in grouped.items()}
 
     def myerson_terms(self, target: Vertex) -> Dict[int, Fraction]:
-        """
-        Возвращает коэффициенты компоненты вектора Майерсона.
-
-        Если a_m — коэффициент при x^m в φ_target(x), то путь содержит
-        k=m-1 ребер, а вклад в Y_target равен a_m/m * r^(m-1).
-        Одновершинные пути не дают вклада.
-        """
         coeffs = self.producer_coefficients(target)
         return {
             vertices_count - 1: Fraction(count, vertices_count)
@@ -186,18 +150,6 @@ class UndirectedGraph:
         }
 
     def rooted_branch_producer_coefficients(self, target: Vertex) -> Dict[int, int]:
-        """
-        Проверочный расчет φ_target(x) для дерева через рекурсию по ветвям.
-
-        Для ветви от target к соседу v:
-            ψ_v = x * (1 + Σ ψ_child).
-
-        Для target:
-            φ_target = x * (1 + Σ ψ_i + Σ_{i<j} ψ_i ψ_j).
-
-        Второе произведение ограничено парами ветвей, потому что простой путь,
-        содержащий target, может проходить максимум через две ветви target.
-        """
         if not self.is_tree():
             raise ValueError(
                 "Рекурсия по ветвям реализована только для деревьев; "
@@ -251,18 +203,11 @@ def draw_graph(
         title: str = "Граф",
         save_path: str | None = None,
 ) -> None:
-    """
-    Визуально выводит граф.
-
-    target — вершина, которую нужно выделить.
-    save_path — путь для сохранения картинки, например "graph_vertex_2.png".
-    """
 
     G = nx.Graph()
     G.add_nodes_from(graph.vertices)
     G.add_edges_from(graph.edges)
 
-    # Фиксированный seed нужен, чтобы расположение вершин не менялось при каждом запуске.
     pos = nx.spring_layout(G, seed=42)
 
     node_colors = []
@@ -307,10 +252,6 @@ def draw_graph(
 
 
 def print_recursive_phi_details(graph: UndirectedGraph, target: Vertex) -> None:
-    """
-    Подробно печатает рекурсивный расчет производящей функции φ_target(x)
-    для дерева.
-    """
     if not graph.is_tree():
         print("Подробный рекурсивный расчет доступен только для дерева.")
         return
@@ -420,7 +361,6 @@ def print_recursive_phi_details(graph: UndirectedGraph, target: Vertex) -> None:
 
 
 def random_tree(n: int, seed: int = 2026) -> UndirectedGraph:
-    """Генерирует случайное дерево на вершинах 1..n."""
     if n < 1:
         raise ValueError("n должно быть положительным")
 
@@ -433,7 +373,6 @@ def random_tree(n: int, seed: int = 2026) -> UndirectedGraph:
 
 
 def print_vertex_analysis(graph: UndirectedGraph, target: Vertex, show_paths: bool = False) -> None:
-    """Печатает φ_p(x), коэффициенты и Y_p(v,g) для одной вершины."""
     coeffs_enum = graph.producer_coefficients(target)
     terms = graph.myerson_terms(target)
 
@@ -470,9 +409,8 @@ def print_vertex_analysis(graph: UndirectedGraph, target: Vertex, show_paths: bo
 
 
 def solve_graph_task() -> None:
-    """Основной сценарий расчета задания 1."""
-    # Пример из лекционной записи: дерево с вершинами 1..6.
     lecture_graph = UndirectedGraph(edges=((2, 4), (2, 5), (2, 1), (1, 3), (3, 6)))
+    targets = [1, 2, 3, 4, 5, 6]
 
     draw_graph(
         lecture_graph,
@@ -480,9 +418,6 @@ def solve_graph_task() -> None:
         title="Граф из лекции. Выделена вершина 2",
         save_path="data/lecture_graph_vertex_2.png",
     )
-
-    # Здесь можно выбрать любые вершины графа.
-    targets = [2, 1, 3, 4, 5, 6]
 
     print("\nГраф из лекции")
     print(f"Ребра: {lecture_graph.edges}")
@@ -493,23 +428,23 @@ def solve_graph_task() -> None:
         print_vertex_analysis(lecture_graph, target, show_paths=(target == 2))
 
 
-    # print("\n" + "-" * 92)
-    # print("Тест: дерево на 8 вершинах")
-    #
-    # test_graph = UndirectedGraph(edges=((1, 2), (2, 3), (3, 4), (1, 5), (2, 6), (5, 7), (5, 8)))
-    # test_targets = [1, 2, 3, 4, 5, 6, 7, 8]
-    #
-    # draw_graph(
-    #     test_graph,
-    #     target=1,
-    #     title="Тестовый граф. Выделена вершина 1",
-    #     save_path="data/test_graph_vertex_1.png",
-    # )
-    #
-    # print(f"Является деревом: {test_graph.is_tree()}")
-    #
-    # for target in test_targets:
-    #     print_vertex_analysis(test_graph, target, show_paths=(target == 1))
+    print("\n" + "-" * 92)
+    print("Тест: дерево на 8 вершинах")
+
+    test_graph = UndirectedGraph(edges=((1, 2), (2, 3), (3, 4), (1, 5), (2, 6), (5, 7), (5, 8)))
+    test_targets = [1, 2, 3, 4, 5, 6, 7, 8]
+
+    draw_graph(
+        test_graph,
+        target=1,
+        title="Тестовый граф. Выделена вершина 1",
+        save_path="data/test_graph_vertex_1.png",
+    )
+
+    print(f"Является деревом: {test_graph.is_tree()}")
+
+    for target in test_targets:
+        print_vertex_analysis(test_graph, target, show_paths=(target == 1))
 
     print("\n" + "-" * 92)
     print("Случайный тест: дерево на 8 вершинах")
