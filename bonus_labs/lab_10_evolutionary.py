@@ -1,50 +1,9 @@
-#!/usr/bin/env python3
-# -*- coding: utf-8 -*-
-"""
-Дополнительная лабораторная работа. Эволюционные игры.
-Пример: "Ястребы и голуби".
-
-Стратегии:
-    NR — нарушать правила, "ястреб";
-    R  — соблюдать правила, "голубь".
-
-Параметры модели:
-    alpha < 0  — ущерб при столкновении двух нарушителей NR/NR;
-    beta  > 0  — выигрыш при взаимном соблюдении правил R/R;
-    gamma > beta — выигрыш нарушителя NR против соблюдающего R.
-
-Матрица выигрышей строкового игрока:
-
-              Игрок B
-             NR       R
-    NR     alpha    gamma
-A
-    R        0       beta
-
-Так как игра симметричная, выигрыш второго игрока получается транспонированием:
-при (NR, R) выплаты равны (gamma, 0), при (R, NR) — (0, gamma).
-
-Что считает программа:
-1. Строит матрицу игры "Ястребы и голуби".
-2. Находит чистые равновесия Нэша.
-3. Находит смешанное симметричное равновесие.
-4. Проверяет эволюционную устойчивость чистых стратегий и смешанного равновесия.
-5. Выводит пороговую долю нарушителей, при которой выгодно нарушать правила.
-6. Выводит формулу репликаторной динамики и устойчивость стационарных точек.
-7. Проверяет лекционный пример в общем виде и решает индивидуальный вариант.
-
-Как менять индивидуальный вариант:
-    измените константу VARIANT или задайте alpha, beta, gamma вручную
-    в функции build_individual_variant().
-"""
-
 from __future__ import annotations
 
 from dataclasses import dataclass
 from fractions import Fraction
 from pathlib import Path
 from typing import Iterable, List, Sequence, Tuple
-
 
 STRATEGIES = ("NR", "R")
 STRATEGY_NAMES = {
@@ -53,20 +12,13 @@ STRATEGY_NAMES = {
 }
 
 
-# -----------------------------------------------------------------------------
-# Вспомогательное форматирование
-# -----------------------------------------------------------------------------
-
-
 def fmt_float(x: float, digits: int = 6) -> str:
-    """Компактно печатает число."""
     if abs(x - round(x)) < 10 ** (-(digits - 1)):
         return str(int(round(x)))
     return f"{x:.{digits}f}".rstrip("0").rstrip(".")
 
 
 def fmt_fraction(fr: Fraction) -> str:
-    """Печатает дробь и десятичное значение."""
     if fr.denominator == 1:
         return str(fr.numerator)
     return f"{fr.numerator}/{fr.denominator} ≈ {fmt_float(float(fr))}"
@@ -76,20 +28,8 @@ def line(char: str = "-", width: int = 96) -> None:
     print(char * width)
 
 
-# -----------------------------------------------------------------------------
-# Модель симметричной игры 2x2
-# -----------------------------------------------------------------------------
-
-
 @dataclass(frozen=True)
 class SymmetricTwoStrategyGame:
-    """
-    Симметричная игра двух игроков с двумя чистыми стратегиями.
-
-    payoff_matrix[i][j] — выигрыш строкового игрока, если он выбрал i,
-    а столбцовый игрок выбрал j.
-    """
-
     strategies: Tuple[str, str]
     payoff_matrix: Tuple[Tuple[float, float], Tuple[float, float]]
     alpha: float
@@ -103,26 +43,17 @@ class SymmetricTwoStrategyGame:
         return self.payoff_matrix[i][j]
 
     def pair_payoff(self, row_strategy: str, col_strategy: str) -> Tuple[float, float]:
-        """Выплаты обоих игроков в симметричной игре."""
         u1 = self.payoff(row_strategy, col_strategy)
         u2 = self.payoff(col_strategy, row_strategy)
         return u1, u2
 
     def payoff_against_share_nr(self, own_strategy: str, share_nr: float) -> float:
-        """
-        Ожидаемый выигрыш чистой стратегии против популяции,
-        где доля NR равна share_nr, а доля R равна 1-share_nr.
-        """
         return (
-            share_nr * self.payoff(own_strategy, "NR")
-            + (1.0 - share_nr) * self.payoff(own_strategy, "R")
+                share_nr * self.payoff(own_strategy, "NR")
+                + (1.0 - share_nr) * self.payoff(own_strategy, "R")
         )
 
     def expected_payoff_mixed(self, own_share_nr: float, opp_share_nr: float) -> float:
-        """
-        Ожидаемый выигрыш смешанной стратегии, где own_share_nr — вероятность NR,
-        против оппонента, у которого вероятность NR равна opp_share_nr.
-        """
         p = own_share_nr
         q = opp_share_nr
         a00 = self.payoff("NR", "NR")
@@ -132,16 +63,9 @@ class SymmetricTwoStrategyGame:
         return p * q * a00 + p * (1 - q) * a01 + (1 - p) * q * a10 + (1 - p) * (1 - q) * a11
 
     def delta_nr_minus_r(self, share_nr: float) -> float:
-        """Разность выигрышей U_NR(x) - U_R(x)."""
         return self.payoff_against_share_nr("NR", share_nr) - self.payoff_against_share_nr("R", share_nr)
 
     def threshold_share_nr_fraction(self) -> Fraction:
-        """
-        Порог x*, при котором U_NR(x*) = U_R(x*).
-
-        Для игры "Ястребы и голуби":
-            x* = (gamma - beta) / (gamma - beta - alpha).
-        """
         a = Fraction(str(self.alpha))
         b = Fraction(str(self.beta))
         g = Fraction(str(self.gamma))
@@ -158,13 +82,7 @@ class SymmetricTwoStrategyGame:
             )
 
 
-# -----------------------------------------------------------------------------
-# Построение игры
-# -----------------------------------------------------------------------------
-
-
 def build_hawk_dove_game(alpha: float, beta: float, gamma: float, title: str) -> SymmetricTwoStrategyGame:
-    """Создает игру 'Ястребы и голуби'."""
     game = SymmetricTwoStrategyGame(
         strategies=STRATEGIES,
         payoff_matrix=((alpha, gamma), (0.0, beta)),
@@ -178,18 +96,6 @@ def build_hawk_dove_game(alpha: float, beta: float, gamma: float, title: str) ->
 
 
 def build_individual_variant(variant: int = 13) -> SymmetricTwoStrategyGame:
-    """
-    Детерминированный индивидуальный вариант.
-
-    Правило генерации выбрано простым и проверяемым:
-        alpha = -variant;
-        beta  = 2 + variant mod 5;
-        gamma = beta + variant.
-
-    Для варианта 13 получаем:
-        alpha = -13, beta = 5, gamma = 18.
-    Условие alpha < 0 < beta < gamma выполняется.
-    """
     alpha = -variant
     beta = 2 + (variant % 5)
     gamma = beta + variant
@@ -197,35 +103,23 @@ def build_individual_variant(variant: int = 13) -> SymmetricTwoStrategyGame:
         alpha=alpha,
         beta=beta,
         gamma=gamma,
-        title=f"Индивидуальный вариант {variant}",
+        title=f"Графики ожидаемых выигрышей стратегий и репликаторной динамики",
     )
 
 
-# -----------------------------------------------------------------------------
-# Равновесия Нэша
-# -----------------------------------------------------------------------------
-
-
 def best_responses_to_column(game: SymmetricTwoStrategyGame, col_strategy: str) -> List[str]:
-    """Лучшие ответы строкового игрока на чистую стратегию столбцового игрока."""
     values = {s: game.payoff(s, col_strategy) for s in game.strategies}
     best = max(values.values())
     return [s for s, value in values.items() if abs(value - best) <= 1e-9]
 
 
 def best_responses_to_row_for_column(game: SymmetricTwoStrategyGame, row_strategy: str) -> List[str]:
-    """Лучшие ответы столбцового игрока на чистую стратегию строкового игрока."""
     values = {s: game.payoff(s, row_strategy) for s in game.strategies}
     best = max(values.values())
     return [s for s, value in values.items() if abs(value - best) <= 1e-9]
 
 
 def pure_nash_equilibria(game: SymmetricTwoStrategyGame) -> List[Tuple[str, str, bool]]:
-    """
-    Возвращает чистые равновесия Нэша.
-
-    Третий элемент — признак строгого равновесия.
-    """
     equilibria: List[Tuple[str, str, bool]] = []
     for row in game.strategies:
         for col in game.strategies:
@@ -238,25 +132,10 @@ def pure_nash_equilibria(game: SymmetricTwoStrategyGame) -> List[Tuple[str, str,
 
 
 def mixed_symmetric_equilibrium(game: SymmetricTwoStrategyGame) -> Fraction:
-    """
-    Симметричное смешанное равновесие: вероятность стратегии NR.
-    """
     return game.threshold_share_nr_fraction()
 
 
-# -----------------------------------------------------------------------------
-# ESS и инвазия мутантов
-# -----------------------------------------------------------------------------
-
-
 def pure_strategy_ess_status(game: SymmetricTwoStrategyGame, resident: str) -> Tuple[bool, List[str]]:
-    """
-    Проверяет ESS-условие для чистой стратегии resident.
-
-    Для чистой стратегии s условие проверяется против каждой другой чистой стратегии s':
-      1) u(s,s) > u(s',s), либо
-      2) u(s,s) = u(s',s) и u(s,s') > u(s',s').
-    """
     comments: List[str] = []
     ok = True
     for mutant in game.strategies:
@@ -288,18 +167,11 @@ def pure_strategy_ess_status(game: SymmetricTwoStrategyGame, resident: str) -> T
 
 
 def mixed_ess_grid_check(
-    game: SymmetricTwoStrategyGame,
-    resident_share_nr: float,
-    eps: float = 0.01,
-    grid_size: int = 1001,
+        game: SymmetricTwoStrategyGame,
+        resident_share_nr: float,
+        eps: float = 0.01,
+        grid_size: int = 1001,
 ) -> Tuple[bool, float, float]:
-    """
-    Численная проверка смешанной стратегии на устойчивость против всех мутантов
-    p_mutant из равномерной сетки [0,1].
-
-    Возвращает:
-        (устойчива ли на сетке, минимальная разность U_resident-U_mutant, p_mutant при минимуме).
-    """
     min_diff = float("inf")
     arg_min = 0.0
     ok = True
@@ -319,32 +191,17 @@ def mixed_ess_grid_check(
     return ok, min_diff, arg_min
 
 
-# -----------------------------------------------------------------------------
-# Репликаторная динамика
-# -----------------------------------------------------------------------------
-
-
 def replicator_rhs(game: SymmetricTwoStrategyGame, share_nr: float) -> float:
-    """
-    Правая часть репликаторной динамики:
-        dx/dt = x(1-x)(U_NR(x)-U_R(x)).
-    """
     x = share_nr
     return x * (1 - x) * game.delta_nr_minus_r(x)
 
 
 def simulate_replicator(
-    game: SymmetricTwoStrategyGame,
-    x0: float,
-    steps: int = 25,
-    dt: float = 0.05,
+        game: SymmetricTwoStrategyGame,
+        x0: float,
+        steps: int = 25,
+        dt: float = 0.05,
 ) -> List[Tuple[int, float, float, float, float]]:
-    """
-    Простая дискретная имитация репликаторной динамики методом Эйлера.
-
-    Возвращает список строк:
-        номер шага, x, U_NR, U_R, dx/dt.
-    """
     x = x0
     rows: List[Tuple[int, float, float, float, float]] = []
     for step in range(steps + 1):
@@ -355,11 +212,6 @@ def simulate_replicator(
         x = x + dt * dx
         x = min(1.0, max(0.0, x))
     return rows
-
-
-# -----------------------------------------------------------------------------
-# Печать результатов
-# -----------------------------------------------------------------------------
 
 
 def print_payoff_matrix(game: SymmetricTwoStrategyGame) -> None:
@@ -536,10 +388,6 @@ def print_replicator_analysis(game: SymmetricTwoStrategyGame) -> None:
 
 
 def save_optional_plot(game: SymmetricTwoStrategyGame, output_path: str) -> None:
-    """
-    Сохраняет график выигрышей U_NR(x), U_R(x) и пороговой точки.
-    Если matplotlib не установлен, построение пропускается.
-    """
     try:
         import matplotlib.pyplot as plt
     except Exception:
@@ -594,11 +442,6 @@ def analyze_game(game: SymmetricTwoStrategyGame, make_plot: bool = False, plot_p
         save_optional_plot(game, plot_path)
 
 
-# -----------------------------------------------------------------------------
-# Лекционная проверка и индивидуальный вариант
-# -----------------------------------------------------------------------------
-
-
 def print_lecture_symbolic_reference() -> None:
     line("#")
     print("ЛЕКЦИОННЫЙ ПРИМЕР: структура игры 'Ястребы и голуби'")
@@ -623,9 +466,6 @@ def main() -> None:
 
     print_lecture_symbolic_reference()
 
-    # Числовая проверка лекционной структуры.
-    # В самой лекции пример задан параметрически, поэтому здесь взят простой набор,
-    # удовлетворяющий alpha < 0 < beta < gamma.
     lecture_check_game = build_hawk_dove_game(
         alpha=-4,
         beta=2,
@@ -638,7 +478,6 @@ def main() -> None:
         plot_path="data/evolution_lecture_check.png",
     )
 
-    # Индивидуальный вариант.
     individual_game = build_individual_variant(VARIANT)
     analyze_game(
         individual_game,
