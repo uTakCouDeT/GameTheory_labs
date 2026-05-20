@@ -1,23 +1,3 @@
-#!/usr/bin/env python3
-# -*- coding: utf-8 -*-
-"""
-Дополнительная лабораторная работа. Игры «на разорение»
-(игры с ограниченными ресурсами).
-
-Что делает скрипт:
-1. Решает антагонистические матричные игры 2x2 в чистых/смешанных стратегиях.
-2. Проверяет лекционный пример «инспектирование»:
-       Γ_N = [[-1, 1], [1, Γ_{N-1}]],  v_1 = 0,
-       v_N = (v_{N-1}+1)/(-v_{N-1}+3),
-       v_N = (N-1)/(N+1),
-       x^(N)=y^(N)=(1/(N+1), N/(N+1)).
-3. Решает индивидуальный вариант для примера «инспектирование».
-4. Решает рекурсивную игру «женщины и кошки против мышей и мужчин».
-5. Выводит промежуточные значения, матрицы, цены игры и оптимальные стратегии.
-
-Параметры индивидуального варианта меняются в блоке CONFIG внизу файла.
-"""
-
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -26,20 +6,13 @@ from fractions import Fraction
 from typing import Iterable, Sequence
 
 
-# =============================================================================
-# Вспомогательное форматирование
-# =============================================================================
-
-
 def F(x: int | float | Fraction) -> Fraction:
-    """Преобразует число в Fraction."""
     if isinstance(x, Fraction):
         return x
     return Fraction(x).limit_denominator()
 
 
 def fmt_frac(x: Fraction | int | float, show_decimal: bool = True, digits: int = 6) -> str:
-    """Печатает дробь и при необходимости десятичное приближение."""
     value = F(x)
     if value.denominator == 1:
         base = str(value.numerator)
@@ -71,11 +44,6 @@ def print_matrix_2x2(matrix: tuple[tuple[Fraction, Fraction], tuple[Fraction, Fr
         print(f"{label:>12}{fmt_frac(row[0]):>{width}}{fmt_frac(row[1]):>{width}}")
 
 
-# =============================================================================
-# Решение матричной игры 2x2 с нулевой суммой
-# =============================================================================
-
-
 @dataclass(frozen=True)
 class Matrix2x2Solution:
     matrix: tuple[tuple[Fraction, Fraction], tuple[Fraction, Fraction]]
@@ -89,12 +57,6 @@ class Matrix2x2Solution:
 
 
 def solve_zero_sum_2x2(matrix_like: Sequence[Sequence[int | float | Fraction]]) -> Matrix2x2Solution:
-    """
-    Решает 2x2 антагонистическую игру для игрока-строки.
-
-    Матрица содержит выигрыши игрока-строки. Игрок-строка максимизирует,
-    игрок-столбец минимизирует.
-    """
     if len(matrix_like) != 2 or any(len(row) != 2 for row in matrix_like):
         raise ValueError("Ожидается матрица размера 2x2")
 
@@ -135,9 +97,7 @@ def solve_zero_sum_2x2(matrix_like: Sequence[Sequence[int | float | Fraction]]) 
             "а седловая точка отсутствует. Проверьте матрицу."
         )
 
-    # Вероятность первой строки в стратегии игрока-строки.
     p_row1 = (d - c) / denominator
-    # Вероятность первого столбца в стратегии игрока-столбца.
     q_col1 = (d - b) / denominator
     value = (a * d - b * c) / denominator
 
@@ -163,10 +123,10 @@ def solve_zero_sum_2x2(matrix_like: Sequence[Sequence[int | float | Fraction]]) 
 
 
 def print_matrix_solution(
-    title: str,
-    matrix: tuple[tuple[Fraction, Fraction], tuple[Fraction, Fraction]],
-    row_labels: tuple[str, str] = ("строка 1", "строка 2"),
-    col_labels: tuple[str, str] = ("столбец 1", "столбец 2"),
+        title: str,
+        matrix: tuple[tuple[Fraction, Fraction], tuple[Fraction, Fraction]],
+        row_labels: tuple[str, str] = ("строка 1", "строка 2"),
+        col_labels: tuple[str, str] = ("столбец 1", "столбец 2"),
 ) -> Matrix2x2Solution:
     print("\n" + title)
     print_matrix_2x2(matrix, row_labels=row_labels, col_labels=col_labels)
@@ -183,13 +143,7 @@ def print_matrix_solution(
     return solution
 
 
-# =============================================================================
-# Пример 2 из лекции: инспектирование
-# =============================================================================
-
-
 def inspection_value_recursive(N: int) -> Fraction:
-    """Цена игры инспектирования по рекуррентной формуле."""
     if N < 1:
         raise ValueError("N должно быть не меньше 1")
     value = Fraction(0)
@@ -199,14 +153,12 @@ def inspection_value_recursive(N: int) -> Fraction:
 
 
 def inspection_value_closed(N: int) -> Fraction:
-    """Замкнутая формула для цены игры инспектирования."""
     if N < 1:
         raise ValueError("N должно быть не меньше 1")
     return Fraction(N - 1, N + 1)
 
 
 def inspection_matrix(N: int) -> tuple[tuple[Fraction, Fraction], tuple[Fraction, Fraction]]:
-    """Эффективная 2x2 матрица Γ_N после замены Γ_{N-1} на v_{N-1}."""
     if N < 2:
         raise ValueError("Матрица Γ_N в виде 2x2 строится для N >= 2")
     previous = inspection_value_recursive(N - 1)
@@ -214,21 +166,18 @@ def inspection_matrix(N: int) -> tuple[tuple[Fraction, Fraction], tuple[Fraction
 
 
 def inspection_matrix_closed(N: int) -> tuple[tuple[Fraction, Fraction], tuple[Fraction, Fraction]]:
-    """Эквивалентная матрица Γ_N из лекционной формулы."""
     if N < 2:
         raise ValueError("Матрица Γ_N в виде 2x2 строится для N >= 2")
     return ((Fraction(-1), Fraction(1)), (Fraction(1), Fraction(N - 2, N)))
 
 
 def inspection_optimal_strategy(N: int) -> tuple[Fraction, Fraction]:
-    """Оптимальные стратегии x^(N)=y^(N)."""
     if N < 2:
         raise ValueError("Оптимальная смешанная стратегия в указанном виде дана для N >= 2")
     return Fraction(1, N + 1), Fraction(N, N + 1)
 
 
 def print_inspection_lecture_check(max_N: int = 8) -> None:
-    """Проверка лекционного примера инспектирования."""
     print("\n" + "=" * 96)
     print("Лекционный пример 2: инспектирование")
     print("=" * 96)
@@ -255,7 +204,6 @@ def print_inspection_lecture_check(max_N: int = 8) -> None:
 
 
 def print_inspection_individual_variant(N: int) -> None:
-    """Подробный расчет индивидуального варианта инспектирования."""
     print("\n" + "=" * 96)
     print(f"Индивидуальный вариант: инспектирование, N = {N}")
     print("=" * 96)
@@ -268,7 +216,7 @@ def print_inspection_individual_variant(N: int) -> None:
     for k in range(2, N + 1):
         current = (previous + 1) / (-previous + 3)
         print(
-            f"  v_{k} = (v_{k-1}+1)/(-v_{k-1}+3) = "
+            f"  v_{k} = (v_{k - 1}+1)/(-v_{k - 1}+3) = "
             f"({fmt_frac(previous, False)}+1)/(-{fmt_frac(previous, False)}+3) = {fmt_frac(current)}"
         )
         previous = current
@@ -279,13 +227,13 @@ def print_inspection_individual_variant(N: int) -> None:
     y = inspection_optimal_strategy(N)
 
     print("\nПроверка по замкнутой формуле:")
-    print(f"  v_{N} = (N-1)/(N+1) = {N-1}/{N+1} = {fmt_frac(v_closed)}")
+    print(f"  v_{N} = (N-1)/(N+1) = {N - 1}/{N + 1} = {fmt_frac(v_closed)}")
     print(f"  Значение по рекурсии: {fmt_frac(v_rec)}")
     print(f"  Совпадение рекурсии и формулы: {'да' if v_rec == v_closed else 'нет'}")
 
     matrix = inspection_matrix(N)
     print_matrix_solution(
-        title=f"Эффективная матрица Γ_{N} = [[-1, 1], [1, v_{N-1}]]",
+        title=f"Эффективная матрица Γ_{N} = [[-1, 1], [1, v_{N - 1}]]",
         matrix=matrix,
         row_labels=("I", "II"),
         col_labels=("I", "II"),
@@ -297,25 +245,8 @@ def print_inspection_individual_variant(N: int) -> None:
     print(f"  Оптимальная стратегия второго игрока: y^({N}) = {fmt_strategy(y, ('I', 'II'))}")
 
 
-# =============================================================================
-# Пример 3: женщины и кошки против мышей и мужчин
-# =============================================================================
-
-
 @dataclass(frozen=True)
 class WomenCatsMiceMenGame:
-    """
-    Рекурсивная игра:
-    группа I — m1 женщин, m2 кошек;
-    группа II — n1 мышей, n2 мужчин.
-
-    Правила устранения:
-    - женщина устраняет мужчину;
-    - мужчина устраняет кошку;
-    - кошка устраняет мышь;
-    - мышь устраняет женщину.
-    """
-
     @staticmethod
     def _validate_state(m1: int, m2: int, n1: int, n2: int) -> None:
         if min(m1, m2, n1, n2) < 0:
@@ -323,38 +254,22 @@ class WomenCatsMiceMenGame:
 
     @lru_cache(maxsize=None)
     def value(self, m1: int, m2: int, n1: int, n2: int) -> Fraction:
-        """Цена игры v(m1,m2;n1,n2)."""
         self._validate_state(m1, m2, n1, n2)
 
-        # Группа II потеряла один из типов. У нее больше нет содержательного выбора,
-        # поэтому группа I считается выигравшей при наличии обоих своих типов.
         if (n1 == 0 or n2 == 0) and m1 > 0 and m2 > 0:
             return Fraction(1)
 
-        # Группа I потеряла один из типов. У нее больше нет содержательного выбора,
-        # поэтому группа II считается выигравшей при наличии обоих своих типов.
         if (m1 == 0 or m2 == 0) and n1 > 0 and n2 > 0:
             return Fraction(-1)
 
-        # Если одновременно обе группы потеряли по типу, такое состояние не возникает
-        # при стандартной рекурсии из внутренней области. Для устойчивости возвращаем 0.
         if m1 == 0 or m2 == 0 or n1 == 0 or n2 == 0:
             return Fraction(0)
 
         matrix = self.subgame_matrix(m1, m2, n1, n2)
         return solve_zero_sum_2x2(matrix).value
 
-    def subgame_matrix(self, m1: int, m2: int, n1: int, n2: int) -> tuple[tuple[Fraction, Fraction], tuple[Fraction, Fraction]]:
-        """
-        Матрица очередного хода.
-
-        Строки группы I: cat, woman.
-        Столбцы группы II: man, mouse.
-
-                     man             mouse
-          cat     v(m2-1)          v(n1-1)
-          woman   v(n2-1)          v(m1-1)
-        """
+    def subgame_matrix(self, m1: int, m2: int, n1: int, n2: int) -> tuple[
+        tuple[Fraction, Fraction], tuple[Fraction, Fraction]]:
         self._validate_state(m1, m2, n1, n2)
         if min(m1, m2, n1, n2) <= 0:
             raise ValueError("Матрица очередного хода строится только для m1,m2,n1,n2 > 0")
@@ -374,7 +289,6 @@ class WomenCatsMiceMenGame:
         return solve_zero_sum_2x2(self.subgame_matrix(m1, m2, n1, n2))
 
     def recurrence_formula_value(self, m1: int, m2: int, n1: int, n2: int) -> Fraction:
-        """Значение по формуле с четырьмя предыдущими состояниями."""
         a = self.value(m1, m2 - 1, n1, n2)  # v(m2-1)
         b = self.value(m1, m2, n1 - 1, n2)  # v(n1-1)
         c = self.value(m1, m2, n1, n2 - 1)  # v(n2-1)
@@ -386,12 +300,6 @@ class WomenCatsMiceMenGame:
 
 
 def generated_population_variant(variant: int) -> tuple[int, int, int, int]:
-    """
-    Воспроизводимая генерация небольшого индивидуального варианта.
-
-    Для варианта 13 получается:
-        m1=3, m2=4, n1=2, n2=3.
-    """
     m1 = 2 + (variant % 3)
     m2 = 2 + ((variant + 1) % 3)
     n1 = 2 + ((variant + 2) % 3)
@@ -400,7 +308,6 @@ def generated_population_variant(variant: int) -> tuple[int, int, int, int]:
 
 
 def print_women_cats_lecture_check() -> None:
-    """Проверка базовых лекционных значений примера 3."""
     print("\n" + "=" * 96)
     print("Лекционный пример 3: женщины и кошки против мышей и мужчин")
     print("=" * 96)
@@ -422,7 +329,6 @@ def print_women_cats_lecture_check() -> None:
 
 
 def print_women_cats_individual_variant(m1: int, m2: int, n1: int, n2: int) -> None:
-    """Подробный расчет индивидуального варианта примера 3."""
     print("\n" + "=" * 96)
     print(f"Индивидуальный вариант: v(m1,m2;n1,n2) = v({m1},{m2};{n1},{n2})")
     print("=" * 96)
@@ -465,11 +371,6 @@ def print_women_cats_individual_variant(m1: int, m2: int, n1: int, n2: int) -> N
         + fmt_strategy(solution.col_strategy, ("man", "mouse"))
     )
     print(f"  Количество вычисленных рекурсивных состояний: {game.value.cache_info().currsize}")
-
-
-# =============================================================================
-# Основной сценарий
-# =============================================================================
 
 
 VARIANT = 13
